@@ -1,0 +1,41 @@
+{
+  "name": "@bricks-deal/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev src/index.ts",
+    "dev:env": "bash ./scripts/dev.sh",
+    "deploy": "wrangler deploy src/index.ts",
+    "deploy:dev": "bash ./scripts/deploy.sh",
+    "deploy:prod": "bash ./scripts/deploy.sh production",
+    "build": "tsc",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:ui": "vitest --ui",
+    "validate": "tsc --noEmit && eslint src"
+  },
+  "dependencies": {
+    "@hono/swagger-ui": "^0.5.1",
+    "@hono/zod-openapi": "^0.19.2",
+    "@hono/zod-validator": "^0.1.11",
+    "@types/jsonwebtoken": "^9.0.9",
+    "better-auth": "^1.2.3",
+    "dotenv": "^16.4.7",
+    "hono": "^4.7.4",
+    "jsonwebtoken": "^9.0.2",
+    "node-fetch": "^3.3.2",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20231218.0",
+    "@types/node": "^20.17.23",
+    "@vitest/coverage-v8": "^1.1.3",
+    "@vitest/ui": "^1.1.3",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.1.3",
+    "wrangler": "^3.22.1"
+  }
+}

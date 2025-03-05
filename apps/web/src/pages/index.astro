@@ -1,0 +1,174 @@
+---
+import Layout from "../layouts/Layout.astro";
+---
+
+<Layout title="Home">
+  <div class="relative">
+    <div class="mx-auto max-w-7xl">
+      <div class="relative z-10 pt-14 lg:w-full lg:max-w-2xl">
+        <div class="relative py-32 px-6 sm:py-40 lg:px-8 lg:py-56 lg:pr-0">
+          <div class="mx-auto max-w-2xl lg:mx-0 lg:max-w-xl">
+            <h1
+              class="text-4xl font-bold tracking-tight text-gray-900 sm:text-6xl"
+            >
+              Explore the LEGO Catalog
+            </h1>
+            <p class="mt-6 text-lg leading-8 text-gray-600">
+              Browse thousands of LEGO sets and minifigures, organized by theme
+              and year. Find your favorite sets, check prices, and discover new
+              additions to your collection.
+            </p>
+            <div class="mt-10 flex items-center gap-x-6">
+              <a
+                href="/sets"
+                class="rounded-md bg-lego-red px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
+              >
+                Browse Sets
+              </a>
+              <a
+                href="/themes"
+                class="text-sm font-semibold leading-6 text-gray-900"
+              >
+                Explore Themes <span aria-hidden="true">→</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="bg-gray-50 lg:absolute lg:inset-y-0 lg:right-0 lg:w-1/2">
+      <img
+        class="aspect-[3/2] object-cover lg:aspect-auto lg:h-full lg:w-full"
+        src="https://images.bricksdeal.com/catalog/set/lego-icons-the-majestic-horse-10378.jpg"
+        alt="LEGO Icons The Majestic Horse"
+      />
+    </div>
+  </div>
+
+  <div class="bg-white py-24 sm:py-32">
+    <div class="mx-auto max-w-7xl px-6 lg:px-8">
+      <div class="mx-auto max-w-2xl lg:text-center">
+        <h2 class="text-base font-semibold leading-7 text-lego-blue">
+          Discover
+        </h2>
+        <p
+          class="mt-2 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl"
+        >
+          Everything you need to know about LEGO
+        </p>
+        <p class="mt-6 text-lg leading-8 text-gray-600">
+          Our comprehensive catalog includes detailed information about LEGO
+          sets, minifigures, and themes.
+        </p>
+      </div>
+      <div class="mx-auto mt-16 max-w-2xl sm:mt-20 lg:mt-24 lg:max-w-none">
+        <dl
+          class="grid max-w-xl grid-cols-1 gap-x-8 gap-y-16 lg:max-w-none lg:grid-cols-3"
+        >
+          <div class="flex flex-col">
+            <dt
+              class="flex items-center gap-x-3 text-base font-semibold leading-7 text-gray-900"
+            >
+              <svg
+                class="h-5 w-5 flex-none text-lego-red"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M5.5 17a4.5 4.5 0 01-1.44-8.765 4.5 4.5 0 018.302-3.046 3.5 3.5 0 014.504 4.272A4 4 0 0115 17H5.5zm3.75-2.75a.75.75 0 001.5 0V9.66l1.95 2.1a.75.75 0 101.1-1.02l-3.25-3.5a.75.75 0 00-1.1 0l-3.25 3.5a.75.75 0 101.1 1.02l1.95-2.1v4.59z"
+                  clip-rule="evenodd"></path>
+              </svg>
+              Sets
+            </dt>
+            <dd
+              class="mt-4 flex flex-auto flex-col text-base leading-7 text-gray-600"
+            >
+              <p class="flex-auto">
+                Browse our extensive collection of LEGO sets, from classic
+                themes to the latest releases.
+              </p>
+              <p class="mt-6">
+                <a
+                  href="/sets"
+                  class="text-sm font-semibold leading-6 text-lego-blue"
+                >
+                  Browse sets <span aria-hidden="true">→</span>
+                </a>
+              </p>
+            </dd>
+          </div>
+          <div class="flex flex-col">
+            <dt
+              class="flex items-center gap-x-3 text-base font-semibold leading-7 text-gray-900"
+            >
+              <svg
+                class="h-5 w-5 flex-none text-lego-yellow"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z"
+                  clip-rule="evenodd"></path>
+              </svg>
+              Minifigures
+            </dt>
+            <dd
+              class="mt-4 flex flex-auto flex-col text-base leading-7 text-gray-600"
+            >
+              <p class="flex-auto">
+                Discover thousands of LEGO minifigures from various themes and
+                series.
+              </p>
+              <p class="mt-6">
+                <a
+                  href="/minifigs"
+                  class="text-sm font-semibold leading-6 text-lego-blue"
+                >
+                  Browse minifigures <span aria-hidden="true">→</span>
+                </a>
+              </p>
+            </dd>
+          </div>
+          <div class="flex flex-col">
+            <dt
+              class="flex items-center gap-x-3 text-base font-semibold leading-7 text-gray-900"
+            >
+              <svg
+                class="h-5 w-5 flex-none text-lego-green"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z"
+                  clip-rule="evenodd"></path>
+              </svg>
+              Themes
+            </dt>
+            <dd
+              class="mt-4 flex flex-auto flex-col text-base leading-7 text-gray-600"
+            >
+              <p class="flex-auto">
+                Explore LEGO themes from Star Wars to City, Technic to Friends,
+                and everything in between.
+              </p>
+              <p class="mt-6">
+                <a
+                  href="/themes"
+                  class="text-sm font-semibold leading-6 text-lego-blue"
+                >
+                  Browse themes <span aria-hidden="true">→</span>
+                </a>
+              </p>
+            </dd>
+          </div>
+        </dl>
+      </div>
+    </div>
+  </div>
+</Layout>

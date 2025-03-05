@@ -1,0 +1,247 @@
+---
+import Layout from "../layouts/Layout.astro";
+
+// Define the Set interface
+interface Set {
+  name: string;
+  set_num: string;
+  year: number;
+  num_parts: number;
+  theme_name: string;
+  image_url?: string;
+}
+
+// Initialize empty array with proper type
+let setsList: Set[] = [];
+
+try {
+  // Fetch sets data from API
+  const response = await fetch("http://localhost:8787/api/sets");
+
+  // Check if the response is successful
+  if (response.ok) {
+    const data = await response.json();
+    setsList = data.data || [];
+  } else {
+    console.error("API error:", response.status);
+    // Use mock data if API fails
+    setsList = [
+      {
+        name: "Millennium Falcon",
+        set_num: "75192",
+        year: 2017,
+        num_parts: 7541,
+        theme_name: "Star Wars",
+        image_url: "https://via.placeholder.com/300?text=Millennium+Falcon",
+      },
+      {
+        name: "Hogwarts Castle",
+        set_num: "71043",
+        year: 2018,
+        num_parts: 6020,
+        theme_name: "Harry Potter",
+        image_url: "https://via.placeholder.com/300?text=Hogwarts+Castle",
+      },
+      {
+        name: "Technic Bugatti Chiron",
+        set_num: "42083",
+        year: 2018,
+        num_parts: 3599,
+        theme_name: "Technic",
+        image_url: "https://via.placeholder.com/300?text=Bugatti+Chiron",
+      },
+      {
+        name: "City Police Station",
+        set_num: "60141",
+        year: 2017,
+        num_parts: 894,
+        theme_name: "City",
+        image_url: "https://via.placeholder.com/300?text=Police+Station",
+      },
+    ];
+  }
+} catch (error) {
+  console.error("Error fetching sets:", error);
+  // Use same mock data if fetch fails
+  setsList = [
+    {
+      name: "Millennium Falcon",
+      set_num: "75192",
+      year: 2017,
+      num_parts: 7541,
+      theme_name: "Star Wars",
+      image_url: "https://via.placeholder.com/300?text=Millennium+Falcon",
+    },
+    {
+      name: "Hogwarts Castle",
+      set_num: "71043",
+      year: 2018,
+      num_parts: 6020,
+      theme_name: "Harry Potter",
+      image_url: "https://via.placeholder.com/300?text=Hogwarts+Castle",
+    },
+    {
+      name: "Technic Bugatti Chiron",
+      set_num: "42083",
+      year: 2018,
+      num_parts: 3599,
+      theme_name: "Technic",
+      image_url: "https://via.placeholder.com/300?text=Bugatti+Chiron",
+    },
+    {
+      name: "City Police Station",
+      set_num: "60141",
+      year: 2017,
+      num_parts: 894,
+      theme_name: "City",
+      image_url: "https://via.placeholder.com/300?text=Police+Station",
+    },
+  ];
+}
+---
+
+<Layout title="LEGO Sets - Bricks Deal">
+  <main class="container mx-auto px-4 py-8">
+    <h1 class="text-3xl font-bold mb-6">LEGO Sets</h1>
+
+    <div class="mb-8">
+      <div class="flex flex-wrap items-center gap-4">
+        <div class="relative">
+          <input
+            type="text"
+            id="search-input"
+            placeholder="Search sets..."
+            class="w-full md:w-80 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+
+        <div class="flex gap-2">
+          <select
+            id="sort-select"
+            class="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="name">Sort by Name</option>
+            <option value="year">Sort by Year</option>
+            <option value="pieces">Sort by Pieces</option>
+            <option value="set_num">Sort by Set Number</option>
+          </select>
+
+          <select
+            id="theme-filter"
+            class="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="">All Themes</option>
+            <option value="star-wars">Star Wars</option>
+            <option value="harry-potter">Harry Potter</option>
+            <option value="city">City</option>
+            <option value="technic">Technic</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"
+      id="sets-grid"
+    >
+      {
+        setsList.map((set) => (
+          <div class="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
+            <div class="aspect-square overflow-hidden">
+              <img
+                src={
+                  set.image_url ||
+                  "https://via.placeholder.com/300?text=No+Image"
+                }
+                alt={set.name}
+                class="w-full h-full object-contain"
+              />
+            </div>
+            <div class="p-4">
+              <h2 class="text-lg font-semibold mb-1 line-clamp-2">
+                {set.name}
+              </h2>
+              <div class="text-sm text-gray-600 mb-2">
+                <span class="font-medium">{set.set_num}</span>
+              </div>
+              <div class="flex justify-between items-center mb-2">
+                <div class="text-sm text-gray-500">{set.year}</div>
+                <div class="text-sm">
+                  <span class="font-medium">{set.num_parts}</span> pieces
+                </div>
+              </div>
+              <div class="text-xs px-2 py-1 bg-indigo-100 text-indigo-800 rounded-full inline-block">
+                {set.theme_name}
+              </div>
+            </div>
+          </div>
+        ))
+      }
+    </div>
+
+    {
+      setsList.length === 0 && (
+        <div class="text-center py-12">
+          <p class="text-gray-500 text-lg">
+            No sets found. Try adjusting your search.
+          </p>
+        </div>
+      )
+    }
+
+    <div class="mt-8 flex justify-center">
+      <nav class="inline-flex rounded-md shadow">
+        <a
+          href="#"
+          class="px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          Previous
+        </a>
+        <a
+          href="#"
+          class="px-4 py-2 border-l-0 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          1
+        </a>
+        <a
+          href="#"
+          class="px-4 py-2 border-l-0 border border-gray-300 bg-indigo-50 text-sm font-medium text-indigo-600"
+        >
+          2
+        </a>
+        <a
+          href="#"
+          class="px-4 py-2 border-l-0 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          3
+        </a>
+        <a
+          href="#"
+          class="px-4 py-2 border-l-0 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          Next
+        </a>
+      </nav>
+    </div>
+  </main>
+</Layout>
+
+<script>
+  // Client-side filtering and sorting logic
+  document.addEventListener("DOMContentLoaded", () => {
+    const searchInput = document.getElementById("search-input");
+    const sortSelect = document.getElementById("sort-select");
+    const themeFilter = document.getElementById("theme-filter");
+
+    if (searchInput && sortSelect && themeFilter) {
+      searchInput.addEventListener("input", filterSets);
+      sortSelect.addEventListener("change", filterSets);
+      themeFilter.addEventListener("change", filterSets);
+    }
+
+    function filterSets() {
+      // This would be implemented with client-side filtering or by fetching from the API
+      console.log("Filtering sets...");
+    }
+  });
+</script>

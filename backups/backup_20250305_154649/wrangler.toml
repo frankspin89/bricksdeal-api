@@ -1,0 +1,54 @@
+name = "bricks-deal-api"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# Configure bundling to handle Hono dependencies
+[build]
+command = "npm run build"
+
+# Mark Hono modules as external to fix bundling issues
+[[rules]]
+type = "ESModule"
+globs = ["**/node_modules/hono/**/*.js"]
+
+# Add additional rules for Hono-related packages
+[[rules]]
+type = "ESModule"
+globs = ["**/node_modules/@hono/**/*.js"]
+
+# Bind to your D1 database
+[[d1_databases]]
+binding = "DB"
+database_name = "bricksdeal"
+database_id = "52b1f025-fc2c-440d-934e-acc0efd6c2fb"
+
+# Bind to your R2 bucket for images
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "lego-images"
+preview_bucket_name = "lego-images"
+
+# Environment variables
+[vars]
+# Hardcoded values for local development
+CLOUDFLARE_ACCOUNT_ID = "***REDACTED***"
+CLOUDFLARE_ACCESS_KEY_ID = "***REDACTED***"
+CLOUDFLARE_SECRET_ACCESS_KEY = "***REDACTED***"
+CLOUDFLARE_DOMAIN = "images.bricksdeal.com"
+JWT_SECRET = "***REDACTED***"
+ADMIN_USERNAME = "admin"
+ADMIN_PASSWORD = "***REDACTED***"
+CLOUDFLARE_DATABASE_ID = "52b1f025-fc2c-440d-934e-acc0efd6c2fb"
+CLOUDFLARE_R2_BUCKET = "lego-images"
+ENVIRONMENT = "development"
+
+# Development environment
+[env.development]
+# Development-specific settings
+vars = { ENVIRONMENT = "development" }
+
+# Production environment
+[env.production]
+# Production-specific settings
+vars = { ENVIRONMENT = "production" } 

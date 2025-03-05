@@ -1,0 +1,237 @@
+---
+import Layout from "../layouts/Layout.astro";
+
+// Define the Theme interface
+interface Theme {
+  name: string;
+  parent_id?: number;
+  parent_name?: string;
+  sets_count?: number;
+  year_from?: number;
+  year_to?: number;
+}
+
+// Initialize empty array with proper type
+let themes: Theme[] = [];
+
+try {
+  // Fetch themes data from API
+  const response = await fetch("http://localhost:8787/api/themes");
+
+  // Check if the response is successful
+  if (response.ok) {
+    const data = await response.json();
+    themes = data.data || [];
+  } else {
+    console.error("API error:", response.status);
+    // Use mock data if API fails
+    themes = [
+      {
+        name: "Star Wars",
+        sets_count: 825,
+        year_from: 1999,
+        year_to: 2023,
+      },
+      {
+        name: "Harry Potter",
+        sets_count: 165,
+        year_from: 2001,
+        year_to: 2023,
+      },
+      {
+        name: "City",
+        sets_count: 450,
+        year_from: 2005,
+        year_to: 2023,
+      },
+      {
+        name: "Technic",
+        sets_count: 650,
+        year_from: 1977,
+        year_to: 2023,
+      },
+      {
+        name: "Creator Expert",
+        parent_id: 22,
+        parent_name: "Creator",
+        sets_count: 87,
+        year_from: 2013,
+        year_to: 2023,
+      },
+      {
+        name: "Marvel Super Heroes",
+        sets_count: 175,
+        year_from: 2012,
+        year_to: 2023,
+      },
+    ];
+  }
+} catch (error) {
+  console.error("Error fetching themes:", error);
+  // Use same mock data if fetch fails
+  themes = [
+    {
+      name: "Star Wars",
+      sets_count: 825,
+      year_from: 1999,
+      year_to: 2023,
+    },
+    {
+      name: "Harry Potter",
+      sets_count: 165,
+      year_from: 2001,
+      year_to: 2023,
+    },
+    {
+      name: "City",
+      sets_count: 450,
+      year_from: 2005,
+      year_to: 2023,
+    },
+    {
+      name: "Technic",
+      sets_count: 650,
+      year_from: 1977,
+      year_to: 2023,
+    },
+    {
+      name: "Creator Expert",
+      parent_id: 22,
+      parent_name: "Creator",
+      sets_count: 87,
+      year_from: 2013,
+      year_to: 2023,
+    },
+    {
+      name: "Marvel Super Heroes",
+      sets_count: 175,
+      year_from: 2012,
+      year_to: 2023,
+    },
+  ];
+}
+---
+
+<Layout title="LEGO Themes - Bricks Deal">
+  <main class="container mx-auto px-4 py-8">
+    <h1 class="text-3xl font-bold mb-6">LEGO Themes</h1>
+
+    <div class="mb-8">
+      <div class="flex flex-wrap items-center gap-4">
+        <div class="relative">
+          <input
+            type="text"
+            id="search-input"
+            placeholder="Search themes..."
+            class="w-full md:w-80 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+
+        <div class="flex gap-2">
+          <select
+            id="sort-select"
+            class="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="name">Sort by Name</option>
+            <option value="sets">Sort by Sets Count</option>
+            <option value="year">Sort by Year</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"
+      id="themes-grid"
+    >
+      {
+        themes.map((theme) => (
+          <div class="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
+            <div class="p-6">
+              <h2 class="text-xl font-semibold mb-2">{theme.name}</h2>
+              <div class="text-sm text-gray-600 mb-4">
+                {theme.parent_id && <span>Part of {theme.parent_name}</span>}
+                {!theme.parent_id && <span>Main Theme</span>}
+              </div>
+              <div class="flex justify-between items-center">
+                <div class="text-sm">
+                  <span class="font-medium">{theme.sets_count || 0}</span> sets
+                </div>
+                <div class="text-sm text-gray-500">
+                  {theme.year_from && theme.year_to
+                    ? `${theme.year_from} - ${theme.year_to}`
+                    : theme.year_from
+                      ? `From ${theme.year_from}`
+                      : ""}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))
+      }
+    </div>
+
+    {
+      themes.length === 0 && (
+        <div class="text-center py-12">
+          <p class="text-gray-500 text-lg">
+            No themes found. Try adjusting your search.
+          </p>
+        </div>
+      )
+    }
+
+    <div class="mt-8 flex justify-center">
+      <nav class="inline-flex rounded-md shadow">
+        <a
+          href="#"
+          class="px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          Previous
+        </a>
+        <a
+          href="#"
+          class="px-4 py-2 border-l-0 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          1
+        </a>
+        <a
+          href="#"
+          class="px-4 py-2 border-l-0 border border-gray-300 bg-indigo-50 text-sm font-medium text-indigo-600"
+        >
+          2
+        </a>
+        <a
+          href="#"
+          class="px-4 py-2 border-l-0 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          3
+        </a>
+        <a
+          href="#"
+          class="px-4 py-2 border-l-0 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          Next
+        </a>
+      </nav>
+    </div>
+  </main>
+</Layout>
+
+<script>
+  // Client-side filtering and sorting logic
+  document.addEventListener("DOMContentLoaded", () => {
+    const searchInput = document.getElementById("search-input");
+    const sortSelect = document.getElementById("sort-select");
+
+    if (searchInput && sortSelect) {
+      searchInput.addEventListener("input", filterThemes);
+      sortSelect.addEventListener("change", filterThemes);
+    }
+
+    function filterThemes() {
+      // This would be implemented with client-side filtering or by fetching from the API
+      console.log("Filtering themes...");
+    }
+  });
+</script>

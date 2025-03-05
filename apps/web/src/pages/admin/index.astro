@@ -1,0 +1,259 @@
+---
+import Layout from "../../layouts/Layout.astro";
+---
+
+<Layout title="Admin Dashboard - Bricks Deal">
+  <div class="min-h-screen bg-gray-100">
+    <nav class="bg-white shadow-sm">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between h-16">
+          <div class="flex">
+            <div class="flex-shrink-0 flex items-center">
+              <h1 class="text-xl font-bold text-indigo-600">
+                Bricks Deal Admin
+              </h1>
+            </div>
+            <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
+              <a
+                href="/admin"
+                class="border-indigo-500 text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
+              >
+                Dashboard
+              </a>
+              <a
+                href="/admin/sets"
+                class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
+              >
+                Sets
+              </a>
+              <a
+                href="/admin/minifigs"
+                class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
+              >
+                Minifigs
+              </a>
+              <a
+                href="/admin/themes"
+                class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
+              >
+                Themes
+              </a>
+            </div>
+          </div>
+          <div class="flex items-center">
+            <button
+              id="logout-button"
+              class="ml-3 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <div class="py-10">
+      <header>
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <h1 class="text-3xl font-bold leading-tight text-gray-900">
+            Dashboard
+          </h1>
+        </div>
+      </header>
+      <main>
+        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
+          <div class="px-4 py-8 sm:px-0">
+            <div
+              id="dashboard-content"
+              class="border-4 border-dashed border-gray-200 rounded-lg h-96 p-4"
+            >
+              <div class="text-center text-gray-500 text-lg">
+                Loading dashboard data...
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+</Layout>
+
+<script>
+  document.addEventListener("DOMContentLoaded", async () => {
+    const dashboardContent = document.getElementById("dashboard-content");
+    const logoutButton = document.getElementById("logout-button");
+
+    // Check if user is authenticated
+    try {
+      const authResponse = await fetch("http://localhost:8787/auth/me", {
+        credentials: "include",
+      });
+
+      if (!authResponse.ok) {
+        // Redirect to login if not authenticated
+        window.location.href = "/admin/login";
+        return;
+      }
+
+      // Fetch dashboard data
+      const dashboardResponse = await fetch("http://localhost:8787/admin", {
+        credentials: "include",
+      });
+
+      if (dashboardResponse.ok) {
+        const data = await dashboardResponse.json();
+
+        if (dashboardContent) {
+          // Render dashboard stats
+          dashboardContent.innerHTML = `
+            <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              <div class="bg-white overflow-hidden shadow rounded-lg">
+                <div class="px-4 py-5 sm:p-6">
+                  <dl>
+                    <dt class="text-sm font-medium text-gray-500 truncate">Total Sets</dt>
+                    <dd class="mt-1 text-3xl font-semibold text-gray-900">${data.stats.totalSets}</dd>
+                  </dl>
+                </div>
+              </div>
+              
+              <div class="bg-white overflow-hidden shadow rounded-lg">
+                <div class="px-4 py-5 sm:p-6">
+                  <dl>
+                    <dt class="text-sm font-medium text-gray-500 truncate">Total Minifigs</dt>
+                    <dd class="mt-1 text-3xl font-semibold text-gray-900">${data.stats.totalMinifigs}</dd>
+                  </dl>
+                </div>
+              </div>
+              
+              <div class="bg-white overflow-hidden shadow rounded-lg">
+                <div class="px-4 py-5 sm:p-6">
+                  <dl>
+                    <dt class="text-sm font-medium text-gray-500 truncate">Total Themes</dt>
+                    <dd class="mt-1 text-3xl font-semibold text-gray-900">${data.stats.totalThemes}</dd>
+                  </dl>
+                </div>
+              </div>
+              
+              <div class="bg-white overflow-hidden shadow rounded-lg">
+                <div class="px-4 py-5 sm:p-6">
+                  <dl>
+                    <dt class="text-sm font-medium text-gray-500 truncate">Recent Updates</dt>
+                    <dd class="mt-1 text-3xl font-semibold text-gray-900">${data.stats.recentUpdates}</dd>
+                  </dl>
+                </div>
+              </div>
+            </div>
+            
+            <div class="mt-8">
+              <button id="refresh-button" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                Refresh Data
+              </button>
+            </div>
+          `;
+
+          // Add event listener for refresh button
+          const refreshButton = document.getElementById("refresh-button");
+          if (refreshButton) {
+            refreshButton.addEventListener("click", async () => {
+              try {
+                const refreshResponse = await fetch(
+                  "http://localhost:8787/admin/refresh",
+                  {
+                    method: "POST",
+                    credentials: "include",
+                  }
+                );
+
+                if (refreshResponse.ok) {
+                  alert("Data refresh initiated successfully!");
+                } else {
+                  alert("Failed to initiate data refresh.");
+                }
+              } catch (error) {
+                console.error("Refresh error:", error);
+                alert("An error occurred while trying to refresh data.");
+              }
+            });
+          }
+        }
+      } else {
+        if (dashboardContent) {
+          dashboardContent.innerHTML = `
+            <div class="text-center text-red-500">
+              <p>Failed to load dashboard data. Please try again later.</p>
+            </div>
+          `;
+        }
+      }
+    } catch (error) {
+      console.error("Dashboard error:", error);
+      window.location.href = "/admin/login";
+    }
+
+    // Add logout functionality
+    if (logoutButton) {
+      logoutButton.addEventListener("click", async () => {
+        try {
+          await fetch("http://localhost:8787/auth/logout", {
+            method: "POST",
+            credentials: "include",
+          });
+
+          // Redirect to login page
+          window.location.href = "/admin/login";
+        } catch (error) {
+          console.error("Logout error:", error);
+        }
+      });
+    }
+  });
+</script>
+
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    // Check if user is authenticated
+    const checkAuth = async () => {
+      try {
+        // Try to fetch user info from API
+        const response = await fetch("http://localhost:8787/auth/me", {
+          credentials: "include",
+        });
+
+        // If not authenticated and not in dev mode, redirect to login
+        if (!response.ok && !localStorage.getItem("dev_admin_logged_in")) {
+          window.location.href = "/admin/login";
+        }
+      } catch (error) {
+        console.error("Auth check error:", error);
+        // If API is unavailable, check for dev login token
+        if (!localStorage.getItem("dev_admin_logged_in")) {
+          window.location.href = "/admin/login";
+        } else {
+          console.log("Development mode: Admin access granted");
+        }
+      }
+    };
+
+    checkAuth();
+
+    // Handle logout button
+    const logoutButton = document.getElementById("logout-button");
+    if (logoutButton) {
+      logoutButton.addEventListener("click", async () => {
+        try {
+          // Try to logout via API
+          await fetch("http://localhost:8787/auth/logout", {
+            method: "POST",
+            credentials: "include",
+          });
+        } catch (error) {
+          console.error("Logout error:", error);
+        } finally {
+          // Always clear dev token and redirect to login
+          localStorage.removeItem("dev_admin_logged_in");
+          window.location.href = "/admin/login";
+        }
+      });
+    }
+  });
+</script>
