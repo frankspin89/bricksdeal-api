@@ -17,22 +17,22 @@ globs = ["**/node_modules/hono/**/*.js"]
 type = "ESModule"
 globs = ["**/node_modules/@hono/**/*.js"]
 
-# Bind to your D1 database
+# Bind to your D1 database - using environment variables
 [[d1_databases]]
 binding = "DB"
 database_name = "bricksdeal"
-database_id = "52b1f025-fc2c-440d-934e-acc0efd6c2fb"
+database_id = "${CLOUDFLARE_DATABASE_ID}"
 
-# Bind to your R2 bucket for images
+# Bind to your R2 bucket for images - using environment variables
 [[r2_buckets]]
 binding = "IMAGES"
-bucket_name = "lego-images"
-preview_bucket_name = "lego-images"
+bucket_name = "${CLOUDFLARE_R2_BUCKET}"
+preview_bucket_name = "${CLOUDFLARE_R2_BUCKET}"
 
 # Environment variables - using references to environment variables
 # These will be populated from .env files or environment variables
 [vars]
-CLOUDFLARE_DOMAIN = "images.bricksdeal.com"
+CLOUDFLARE_DOMAIN = "${CLOUDFLARE_DOMAIN}"
 ENVIRONMENT = "development"
 
 # Development environment
@@ -43,4 +43,4 @@ vars = { ENVIRONMENT = "development" }
 # Production environment
 [env.production]
 # Production-specific settings
-vars = { ENVIRONMENT = "production" } 
+vars = { ENVIRONMENT = "production" }
