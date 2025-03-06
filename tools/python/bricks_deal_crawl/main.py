@@ -38,6 +38,8 @@ def main():
     extract_parser.add_argument("--validate-all", action="store_true", help="Validate all URLs, not just Cloudflare ones")
     extract_parser.add_argument("--verify-r2", action="store_true", help="Verify that all objects in the R2 bucket are mapped in the CSV files")
     extract_parser.add_argument("--cleanup-local", action="store_true", help="Remove local files that have been successfully uploaded to R2")
+    extract_parser.add_argument("--continue", action="store_true", dest="continue_processing", help="Continue processing from where you left off")
+    extract_parser.add_argument("--show-progress", action="store_true", help="Show current processing progress")
     
     # Continue extraction (new command)
     continue_parser = subparsers.add_parser("continue-extract", help="Continue extracting LEGO catalog data from where you left off")

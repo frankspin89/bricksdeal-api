@@ -22,23 +22,26 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Constants
-LEGO_CATALOG_DIR = os.path.join("input", "lego-catalog")
-EXTRACTED_DIR = os.path.join("input", "lego-catalog-extracted")
-IMAGES_DIR = os.path.join("output", "catalog-images")
+PROXIES_FILE = "input/proxies.csv"
+INPUT_DIR = "input/lego-catalog"
+EXTRACTED_DIR = "input/lego-catalog-extracted"
+IMAGES_DIR = "output/catalog-images"
 IMAGE_MAPPING_FILE = os.path.join(IMAGES_DIR, "image_mapping.json")
+CLOUDFLARE_R2_BUCKET_NAME = os.environ.get("CLOUDFLARE_R2_BUCKET", "lego-images")
+CLOUDFLARE_PUBLIC_URL = f"https://{os.environ.get('CLOUDFLARE_DOMAIN', 'images.bricksdeal.com')}"
+PLACEHOLDER_IMAGE_PATH = os.path.join(IMAGES_DIR, "placeholder.svg")
+PLACEHOLDER_R2_KEY = "catalog/placeholder.svg"
+PLACEHOLDER_URL = f"{CLOUDFLARE_PUBLIC_URL}/{PLACEHOLDER_R2_KEY}"
+
+# Oxylabs credentials
+OXYLABS_USERNAME = os.environ.get("OXYLABS_USERNAME")
+OXYLABS_PASSWORD = os.environ.get("OXYLABS_PASSWORD")
+OXYLABS_ENDPOINT = "dc.oxylabs.io"
 
 # Cloudflare R2 configuration
 CLOUDFLARE_ENDPOINT = f"https://{os.environ.get('CLOUDFLARE_ACCOUNT_ID')}.r2.cloudflarestorage.com"
 CLOUDFLARE_ACCESS_KEY_ID = os.environ.get("CLOUDFLARE_ACCESS_KEY_ID")
 CLOUDFLARE_SECRET_ACCESS_KEY = os.environ.get("CLOUDFLARE_SECRET_ACCESS_KEY")
-CLOUDFLARE_R2_BUCKET_NAME = os.environ.get("CLOUDFLARE_R2_BUCKET", "lego-images")
-CLOUDFLARE_PUBLIC_URL = f"https://{os.environ.get('CLOUDFLARE_DOMAIN', 'images.bricksdeal.com')}"
-
-# Proxy configuration
-PROXIES_FILE = os.path.join("input", "proxies.csv")
-OXYLABS_USERNAME = os.environ.get("OXYLABS_USERNAME")
-OXYLABS_PASSWORD = os.environ.get("OXYLABS_PASSWORD")
-OXYLABS_ENDPOINT = os.environ.get("OXYLABS_ENDPOINT", "dc.oxylabs.io")  # Using datacenter proxies
 try:
     OXYLABS_PORTS = [int(port.strip()) for port in os.environ.get("OXYLABS_PORTS", "8000").split(",") if port.strip().isdigit()]
     if not OXYLABS_PORTS:  # Fallback if no valid ports
@@ -241,7 +244,7 @@ proxy_manager = None
 
 def ensure_directories():
     """Ensure all necessary directories exist."""
-    os.makedirs(LEGO_CATALOG_DIR, exist_ok=True)
+    os.makedirs(INPUT_DIR, exist_ok=True)
     os.makedirs(EXTRACTED_DIR, exist_ok=True)
     os.makedirs(IMAGES_DIR, exist_ok=True)
 
@@ -250,14 +253,14 @@ def extract_gz_files():
     print("Extracting .gz files to plain CSV files...")
     
     # Get all .gz files in the catalog directory
-    gz_files = [f for f in os.listdir(LEGO_CATALOG_DIR) if f.endswith('.csv.gz')]
+    gz_files = [f for f in os.listdir(INPUT_DIR) if f.endswith('.csv.gz')]
     
     if not gz_files:
         print("No .gz files found in the catalog directory.")
         return
     
     for gz_file in gz_files:
-        input_path = os.path.join(LEGO_CATALOG_DIR, gz_file)
+        input_path = os.path.join(INPUT_DIR, gz_file)
         output_path = os.path.join(EXTRACTED_DIR, gz_file[:-3])  # Remove .gz extension
         
         print(f"Extracting {input_path} to {output_path}...")
@@ -335,133 +338,6 @@ def create_seo_friendly_filename(url, prefix="", name=""):
     
     return result
 
-def download_and_optimize_image(url, output_path):
-    """Download and optimize an image using proxy rotation."""
-    global proxy_manager
-    
-    # Set up headers to mimic a browser
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    }
-    
-    max_retries = 3
-    retry_count = 0
-    timeout = 30  # Default timeout
-    
-    if proxy_manager and proxy_manager.use_proxies:
-        timeout = 60  # Longer timeout for proxy connections
-    
-    while retry_count < max_retries:
-        try:
-            current_proxy = {}
-            current_proxy_url = None
-            
-            if proxy_manager and proxy_manager.use_proxies:
-                current_proxy = proxy_manager.get_proxy()
-                # Extract the proxy URL for tracking
-                if current_proxy:
-                    if 'http' in current_proxy:
-                        current_proxy_url = current_proxy['http']
-                    elif 'https' in current_proxy:
-                        current_proxy_url = current_proxy['https']
-                    
-                    print(f"Using proxy: {current_proxy_url} for image: {url}")
-                    # Debug information to verify proxy is being used
-                    if OXYLABS_ENDPOINT in str(current_proxy_url):
-                        print(f"DEBUG: Using Oxylabs proxy for {url}")
-                        print(f"DEBUG: Proxy config: {current_proxy}")
-                else:
-                    if not proxy_manager.force_own_ip:
-                        print(f"ERROR: No proxy available for {url} and force_own_ip is not enabled.")
-                        print("Skipping this image to avoid using your own IP.")
-                        return False
-                    print(f"No proxy available, using direct connection for image: {url}")
-            elif not proxy_manager or not proxy_manager.force_own_ip:
-                print(f"ERROR: Proxy usage is disabled for {url} and force_own_ip is not enabled.")
-                print("Skipping this image to avoid using your own IP.")
-                return False
-            
-            # Make the request with proxies
-            print(f"Making request to {url}...")
-            start_time = time.time()
-            response = requests.get(url, headers=headers, proxies=current_proxy, timeout=timeout)
-            end_time = time.time()
-            print(f"Request completed in {end_time - start_time:.2f} seconds")
-            
-            response.raise_for_status()
-            
-            # Print response headers to verify proxy usage
-            if current_proxy:
-                print(f"DEBUG: Response headers: {dict(response.headers)}")
-                if 'Via' in response.headers:
-                    print(f"DEBUG: Response 'Via' header: {response.headers.get('Via')}")
-            
-            # Open the image
-            img = Image.open(io.BytesIO(response.content))
-            
-            # Convert to RGB if needed
-            if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
-                background = Image.new('RGB', img.size, (255, 255, 255))
-                background.paste(img, mask=img.split()[3] if img.mode == 'RGBA' else None)
-                img = background
-            
-            # Resize if too large
-            max_size = 1200
-            if img.width > max_size or img.height > max_size:
-                ratio = min(max_size / img.width, max_size / img.height)
-                new_size = (int(img.width * ratio), int(img.height * ratio))
-                img = img.resize(new_size, Image.LANCZOS)
-            
-            # Save with optimized quality
-            img.save(output_path, 'JPEG', quality=85, optimize=True)
-            
-            # Mark proxy as successful if used
-            if current_proxy_url and proxy_manager:
-                proxy_manager.mark_proxy_success(current_proxy_url)
-                print(f"Successfully used proxy {current_proxy_url} for {url}")
-                
-            return True
-            
-        except requests.exceptions.ProxyError as e:
-            print(f"Proxy error for image {url}: {e}")
-            print(f"Proxy error details: {str(e.__cause__)}")
-            
-            # Mark proxy as failed if used
-            if current_proxy_url and proxy_manager:
-                proxy_manager.mark_proxy_failure(current_proxy_url)
-            
-            retry_count += 1
-            
-        except requests.exceptions.Timeout as e:
-            print(f"Timeout error for image {url}: {e}")
-            
-            # Mark proxy as failed if used
-            if current_proxy_url and proxy_manager:
-                proxy_manager.mark_proxy_failure(current_proxy_url)
-            
-            retry_count += 1
-            
-        except requests.exceptions.RequestException as e:
-            print(f"Request error for image {url}: {e}")
-            
-            # Mark proxy as failed if used
-            if current_proxy_url and proxy_manager:
-                proxy_manager.mark_proxy_failure(current_proxy_url)
-            
-            retry_count += 1
-            
-        except Exception as e:
-            print(f"Error downloading/optimizing image {url}: {str(e)}")
-            retry_count += 1
-        
-        # Wait before retrying
-        if retry_count < max_retries:
-            time.sleep(2 * retry_count)  # Exponential backoff
-    
-    return False
-
 def upload_to_cloudflare_r2(file_path, object_key):
     """Upload a file to Cloudflare R2."""
     try:
@@ -524,6 +400,14 @@ def process_image_urls(limit=None, minifigs_only=False, start_index=0, batch_siz
     """
     print("Processing image URLs in catalog data...")
     
+    # Ensure placeholder image is uploaded
+    if os.path.exists(PLACEHOLDER_IMAGE_PATH) and not os.path.exists(os.path.join(IMAGES_DIR, "placeholder_uploaded.txt")):
+        placeholder_url = upload_placeholder_image()
+        if placeholder_url:
+            # Mark placeholder as uploaded
+            with open(os.path.join(IMAGES_DIR, "placeholder_uploaded.txt"), 'w') as f:
+                f.write(placeholder_url)
+    
     # Load existing image mapping if it exists
     image_mapping = {}
     if os.path.exists(IMAGE_MAPPING_FILE):
@@ -571,16 +455,41 @@ def process_image_urls(limit=None, minifigs_only=False, start_index=0, batch_siz
         all_urls.extend([{'url': item['url'], 'type': 'set', 'data': item} for item in sets_urls])
     all_urls.extend([{'url': item['url'], 'type': 'minifig', 'data': item} for item in minifigs_urls])
     
-    # Apply limit if specified
+    # Count total URLs to process
+    total_urls = len(all_urls)
+    print(f"Found {total_urls} total URLs to process")
+    
+    # Apply start index first
+    if start_index > 0:
+        if start_index >= len(all_urls):
+            print(f"Start index {start_index} is greater than the number of URLs {len(all_urls)}")
+            return 0, 0
+        all_urls = all_urls[start_index:]
+    
+    # Then apply limit if specified
     if limit is not None and limit > 0:
         all_urls = all_urls[:limit]
+        print(f"Limited to {limit} URLs")
     
     # Apply batch processing if specified
     if batch_size > 0:
-        end_index = start_index + batch_size
-        all_urls = all_urls[start_index:end_index]
+        all_urls = all_urls[:batch_size]
+        print(f"Processing batch of {batch_size} URLs")
     
-    print(f"Found {len(all_urls)} items with images to process")
+    # Save progress information
+    progress_file = os.path.join(IMAGES_DIR, "progress.json")
+    progress_info = {
+        "total_urls": total_urls,
+        "processed_urls": start_index,
+        "remaining_urls": total_urls - start_index,
+        "last_processed_index": start_index,
+        "last_processed_time": datetime.datetime.now().isoformat()
+    }
+    
+    with open(progress_file, 'w') as f:
+        json.dump(progress_info, f, indent=2)
+    
+    print(f"Processing {len(all_urls)} URLs (starting from index {start_index})")
     
     # Process images
     successful = 0
@@ -589,6 +498,18 @@ def process_image_urls(limit=None, minifigs_only=False, start_index=0, batch_siz
     failed_downloads = []
     
     for i, item in enumerate(all_urls):
+        # Update progress
+        current_index = start_index + i
+        if i > 0 and i % 10 == 0:
+            print(f"Progress: {i}/{len(all_urls)} ({current_index}/{total_urls} total)")
+            # Update progress file
+            progress_info["processed_urls"] = current_index
+            progress_info["remaining_urls"] = total_urls - current_index
+            progress_info["last_processed_index"] = current_index
+            progress_info["last_processed_time"] = datetime.datetime.now().isoformat()
+            with open(progress_file, 'w') as f:
+                json.dump(progress_info, f, indent=2)
+        
         url = item['url']
         item_type = item['type']
         data = item['data']
@@ -643,7 +564,28 @@ def process_image_urls(limit=None, minifigs_only=False, start_index=0, batch_siz
             success = True
         else:
             # Download and optimize image
-            success = download_and_optimize_image(url, output_path)
+            max_retries = 3
+            retry_count = 0
+            success = False
+            
+            while retry_count < max_retries and not success:
+                result = download_and_optimize_image(url, output_path)
+                if result == "placeholder":
+                    # Use placeholder image
+                    cloudflare_url = PLACEHOLDER_URL
+                    image_mapping[url] = cloudflare_url
+                    print(f"Using placeholder for 404 image: {url} -> {cloudflare_url}")
+                    successful += 1
+                    break
+                elif result:
+                    success = True
+                else:
+                    retry_count += 1
+                    if retry_count < max_retries:
+                        print(f"Retrying download ({retry_count}/{max_retries})...")
+                        time.sleep(2)  # Wait before retrying
+                    else:
+                        print(f"Failed to download after {max_retries} attempts")
         
         if success:
             # Upload to Cloudflare R2
@@ -652,13 +594,30 @@ def process_image_urls(limit=None, minifigs_only=False, start_index=0, batch_siz
             else:  # minifig
                 object_key = f"catalog/minifig/{filename}"
             
-            cloudflare_url = upload_to_cloudflare_r2(output_path, object_key)
+            # Try uploading with retries
+            max_upload_retries = 3
+            upload_retry_count = 0
+            cloudflare_url = None
+            
+            while upload_retry_count < max_upload_retries and not cloudflare_url:
+                cloudflare_url = upload_to_cloudflare_r2(output_path, object_key)
+                if not cloudflare_url:
+                    upload_retry_count += 1
+                    if upload_retry_count < max_upload_retries:
+                        print(f"Retrying upload ({upload_retry_count}/{max_upload_retries})...")
+                        time.sleep(2)  # Wait before retrying
+                    else:
+                        print(f"Failed to upload after {max_upload_retries} attempts")
             
             if cloudflare_url:
                 # Add to mapping
                 image_mapping[url] = cloudflare_url
                 print(f"Processed image: {url} -> {cloudflare_url}")
                 successful += 1
+                
+                # Save mapping after each successful upload
+                with open(IMAGE_MAPPING_FILE, 'w') as f:
+                    json.dump(image_mapping, f, indent=2)
             else:
                 print(f"Failed to upload image to Cloudflare R2: {url}")
                 failed += 1
@@ -694,9 +653,151 @@ def process_image_urls(limit=None, minifigs_only=False, start_index=0, batch_siz
     with open(IMAGE_MAPPING_FILE, 'w') as f:
         json.dump(image_mapping, f, indent=2)
     
+    # Update final progress
+    progress_info["processed_urls"] = start_index + successful
+    progress_info["remaining_urls"] = total_urls - (start_index + successful)
+    progress_info["last_processed_index"] = start_index + successful
+    progress_info["last_processed_time"] = datetime.datetime.now().isoformat()
+    with open(progress_file, 'w') as f:
+        json.dump(progress_info, f, indent=2)
+    
     print(f"Processed {len(image_mapping)} images. Mapping saved to {IMAGE_MAPPING_FILE}")
     if skipped > 0:
         print(f"Skipped {skipped} already processed images")
+    
+    # Verify the results
+    if not dry_run and successful > 0:
+        print("Verifying processed images...")
+        verify_processed_images(all_urls, image_mapping)
+    
+    return successful, failed
+
+def verify_processed_images(processed_urls, image_mapping):
+    """
+    Verify that processed images were correctly mapped and uploaded.
+    
+    Args:
+        processed_urls: List of URLs that were processed
+        image_mapping: Dictionary mapping original URLs to Cloudflare URLs
+    """
+    verification_results = {
+        "verified": 0,
+        "missing_mapping": 0,
+        "inaccessible": 0
+    }
+    
+    for item in processed_urls:
+        url = item['url']
+        
+        # Check if URL is in mapping
+        if url not in image_mapping:
+            print(f"Warning: URL not in mapping: {url}")
+            verification_results["missing_mapping"] += 1
+            continue
+        
+        cloudflare_url = image_mapping[url]
+        
+        # Check if Cloudflare URL is accessible (optional, can be slow)
+        # This is commented out by default to avoid making too many requests
+        """
+        try:
+            response = requests.head(cloudflare_url, timeout=5)
+            if response.status_code != 200:
+                print(f"Warning: Cloudflare URL not accessible: {cloudflare_url} (Status: {response.status_code})")
+                verification_results["inaccessible"] += 1
+                continue
+        except Exception as e:
+            print(f"Error checking Cloudflare URL: {cloudflare_url} - {str(e)}")
+            verification_results["inaccessible"] += 1
+            continue
+        """
+        
+        verification_results["verified"] += 1
+    
+    print(f"Verification results: {verification_results['verified']} verified, "
+          f"{verification_results['missing_mapping']} missing mapping, "
+          f"{verification_results['inaccessible']} inaccessible")
+
+def get_processing_progress():
+    """
+    Get the current processing progress.
+    
+    Returns:
+        dict: Progress information
+    """
+    progress_file = os.path.join(IMAGES_DIR, "progress.json")
+    if os.path.exists(progress_file):
+        try:
+            with open(progress_file, 'r') as f:
+                progress_info = json.load(f)
+            return progress_info
+        except Exception as e:
+            print(f"Error reading progress file: {str(e)}")
+    
+    return {
+        "total_urls": 0,
+        "processed_urls": 0,
+        "remaining_urls": 0,
+        "last_processed_index": 0,
+        "last_processed_time": None
+    }
+
+def continue_processing(batch_size=100, minifigs_only=False, use_proxies=True, force_own_ip=False, limit=None):
+    """
+    Continue processing from where we left off.
+    
+    Args:
+        batch_size: Number of images to process in this batch
+        minifigs_only: Only process minifigure images
+        use_proxies: Use proxy rotation for image downloads
+        force_own_ip: Allow using own IP if no proxy is available
+        limit: Maximum number of images to process
+    
+    Returns:
+        Tuple of (successful_count, failed_count)
+    """
+    print("Continuing image processing from where we left off...")
+    
+    # Get current progress
+    progress_info = get_processing_progress()
+    start_index = progress_info["last_processed_index"]
+    
+    print(f"Resuming from index {start_index}")
+    print(f"Progress: {progress_info['processed_urls']}/{progress_info['total_urls']} URLs processed")
+    print(f"Remaining: {progress_info['remaining_urls']} URLs")
+    
+    if progress_info["last_processed_time"]:
+        print(f"Last processed: {progress_info['last_processed_time']}")
+    
+    # Initialize proxy manager
+    global proxy_manager
+    proxy_manager = ProxyManager(use_proxies=use_proxies, force_own_ip=force_own_ip)
+    
+    # Process next batch
+    successful, failed = process_image_urls(
+        start_index=start_index,
+        batch_size=batch_size,
+        minifigs_only=minifigs_only,
+        limit=limit
+    )
+    
+    # Update progress file with new progress
+    if successful > 0:
+        progress_info = get_processing_progress()
+        progress_file = os.path.join(IMAGES_DIR, "progress.json")
+        
+        # Calculate new progress
+        new_index = start_index + successful
+        
+        progress_info["last_processed_index"] = new_index
+        progress_info["processed_urls"] = new_index
+        progress_info["remaining_urls"] = progress_info["total_urls"] - new_index
+        progress_info["last_processed_time"] = datetime.datetime.now().isoformat()
+        
+        with open(progress_file, 'w') as f:
+            json.dump(progress_info, f, indent=2)
+        
+        print(f"Updated progress: {progress_info['processed_urls']}/{progress_info['total_urls']} URLs processed")
     
     return successful, failed
 
@@ -1526,6 +1627,139 @@ def cleanup_local_files():
         print(f"Error listing local files: {str(e)}")
         return 0
 
+def upload_placeholder_image():
+    """
+    Upload the placeholder image to Cloudflare R2.
+    
+    Returns:
+        str: The URL of the placeholder image in Cloudflare R2
+    """
+    print("Uploading placeholder image to Cloudflare R2...")
+    
+    # Check if placeholder image exists
+    if not os.path.exists(PLACEHOLDER_IMAGE_PATH):
+        print(f"Placeholder image not found at {PLACEHOLDER_IMAGE_PATH}")
+        return None
+    
+    # Upload to Cloudflare R2
+    cloudflare_url = upload_to_cloudflare_r2(PLACEHOLDER_IMAGE_PATH, PLACEHOLDER_R2_KEY)
+    
+    if cloudflare_url:
+        print(f"Placeholder image uploaded to {cloudflare_url}")
+        return cloudflare_url
+    else:
+        print("Failed to upload placeholder image")
+        return None
+
+def download_and_optimize_image(url, output_path):
+    """
+    Download an image from a URL, optimize it, and save it to the output path.
+    
+    Args:
+        url: URL of the image to download
+        output_path: Path to save the optimized image
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    global proxy_manager
+    
+    # Get proxy
+    proxy = proxy_manager.get_proxy()
+    proxy_url = list(proxy.values())[0] if proxy else None
+    
+    if proxy_url:
+        print(f"Using proxy: {proxy_url} for image: {url}")
+    else:
+        print(f"No proxy available, using direct connection for image: {url}")
+    
+    try:
+        print(f"Making request to {url}...")
+        start_time = time.time()
+        
+        # Add debug for Oxylabs proxy
+        if proxy and "oxylabs.io" in str(proxy):
+            print(f"DEBUG: Using Oxylabs proxy for {url}")
+            print(f"DEBUG: Proxy config: {proxy}")
+        
+        response = requests.get(url, proxies=proxy, timeout=20)
+        end_time = time.time()
+        print(f"Request completed in {end_time - start_time:.2f} seconds")
+        
+        # Add debug for response headers
+        if response.status_code == 200:
+            print(f"DEBUG: Response headers: {response.headers}")
+        
+        # Check if the response is a 404
+        if response.status_code == 404:
+            print(f"Image not found (404): {url}")
+            
+            # Use placeholder image instead
+            if os.path.exists(PLACEHOLDER_IMAGE_PATH):
+                # Check if placeholder is already uploaded to R2
+                if not os.path.exists(os.path.join(IMAGES_DIR, "placeholder_uploaded.txt")):
+                    placeholder_url = upload_placeholder_image()
+                    if placeholder_url:
+                        # Mark placeholder as uploaded
+                        with open(os.path.join(IMAGES_DIR, "placeholder_uploaded.txt"), 'w') as f:
+                            f.write(placeholder_url)
+                
+                # Return True to indicate "success" - we'll use the placeholder URL in the mapping
+                return "placeholder"
+            
+            # If placeholder doesn't exist, return failure
+            return False
+        
+        # Raise an exception for other HTTP errors
+        response.raise_for_status()
+        
+        # Mark proxy as working
+        if proxy_url:
+            proxy_manager.mark_proxy_success(proxy_url)
+            print(f"Successfully used proxy {proxy_url} for {url}")
+        
+        # Create the directory if it doesn't exist
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        
+        # Optimize and save the image
+        try:
+            # Open the image using PIL
+            img = Image.open(io.BytesIO(response.content))
+            
+            # Convert to RGB if needed
+            if img.mode in ('RGBA', 'LA', 'P'):
+                img = img.convert('RGB')
+            
+            # Save the image with optimized settings
+            img.save(output_path, 'JPEG', quality=85, optimize=True)
+            
+            return True
+        except Exception as e:
+            print(f"Error optimizing image: {str(e)}")
+            
+            # Save the raw image as a fallback
+            with open(output_path, 'wb') as f:
+                f.write(response.content)
+            
+            return True
+    except requests.exceptions.RequestException as e:
+        # Check if it's a proxy error
+        if "ProxyError" in str(e) or "ConnectTimeout" in str(e) or "ConnectionError" in str(e):
+            print(f"Proxy error for image {url}: {str(e)}")
+            print(f"Proxy error details: {getattr(e, 'response', None)}")
+            
+            # Mark proxy as failed
+            if proxy_url:
+                proxy_manager.mark_proxy_failure(proxy_url)
+        else:
+            print(f"Request error for image {url}: {str(e)}")
+            
+            # Mark proxy as failed for other errors too
+            if proxy_url:
+                proxy_manager.mark_proxy_failure(proxy_url)
+        
+        return False
+
 def main(args=None):
     """Main entry point for the script."""
     if args is None:
@@ -1549,6 +1783,8 @@ def main(args=None):
         parser.add_argument("--validate-all", action="store_true", help="Validate all URLs, not just Cloudflare ones")
         parser.add_argument("--verify-r2", action="store_true", help="Verify that all objects in the R2 bucket are mapped in the CSV files")
         parser.add_argument("--cleanup-local", action="store_true", help="Remove local files that have been successfully uploaded to R2")
+        parser.add_argument("--continue", action="store_true", dest="continue_processing", help="Continue processing from where you left off")
+        parser.add_argument("--show-progress", action="store_true", help="Show current processing progress")
         
         args = parser.parse_args()
     
@@ -1586,15 +1822,47 @@ def main(args=None):
         cleanup_local_files()
         return
     
+    # Show progress if requested
+    if args.show_progress:
+        progress_info = get_processing_progress()
+        print(f"Progress: {progress_info['processed_urls']}/{progress_info['total_urls']} URLs processed")
+        print(f"Remaining: {progress_info['remaining_urls']} URLs")
+        if progress_info["last_processed_time"]:
+            print(f"Last processed: {progress_info['last_processed_time']}")
+        return
+    
+    # Continue processing if requested
+    if getattr(args, 'continue_processing', False):
+        successful, failed = continue_processing(
+            batch_size=args.batch_size if args.batch_size > 0 else 100,
+            minifigs_only=args.minifigs_only,
+            use_proxies=args.use_proxies,
+            force_own_ip=args.force_own_ip,
+            limit=args.limit
+        )
+        print(f"Summary: {successful} images processed successfully, {failed} images failed")
+        
+        # Always update CSV files after processing images to ensure URLs are updated
+        if not args.update_csv:
+            print("Automatically updating CSV files with new image URLs...")
+            update_csv_with_new_urls()
+        
+        # Clean up local files if requested
+        if args.cleanup_local:
+            print("Cleaning up local files...")
+            cleanup_local_files()
+        
+        return
+    
     # Ensure directories exist
     ensure_directories()
     
     # Extract .gz files if requested or if no specific action is requested
-    if args.extract_only or (not args.process_images and not args.update_csv and not args.test and not args.rebuild_mapping and not args.validate_urls and not args.verify_r2 and not args.cleanup_local):
+    if args.extract_only or (not args.process_images and not args.update_csv and not args.test and not args.rebuild_mapping and not args.validate_urls and not args.verify_r2 and not args.cleanup_local and not getattr(args, 'continue_processing', False) and not args.show_progress):
         extract_gz_files()
     
     # Process images if requested or if no specific action is requested
-    if args.process_images or (not args.extract_only and not args.update_csv and not args.test and not args.rebuild_mapping and not args.validate_urls and not args.verify_r2 and not args.cleanup_local):
+    if args.process_images or (not args.extract_only and not args.update_csv and not args.test and not args.rebuild_mapping and not args.validate_urls and not args.verify_r2 and not args.cleanup_local and not getattr(args, 'continue_processing', False) and not args.show_progress):
         successful, failed = process_image_urls(
             limit=args.limit, 
             minifigs_only=args.minifigs_only,
@@ -1608,6 +1876,11 @@ def main(args=None):
         if not args.update_csv:
             print("Automatically updating CSV files with new image URLs...")
             update_csv_with_new_urls()
+        
+        # Clean up local files if requested
+        if args.cleanup_local:
+            print("Cleaning up local files...")
+            cleanup_local_files()
     
     # Update CSV files if requested
     if args.update_csv:

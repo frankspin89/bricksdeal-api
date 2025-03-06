@@ -247,53 +247,50 @@ def update_csv_menu():
 
 def continue_extraction_menu():
     """Show the continue extraction menu."""
-    print_header("Continue Extraction Menu")
-    
-    print_menu_item(1, "Continue Minifigs Extraction", "Continue extracting minifigs from where you left off")
-    print_menu_item(2, "Continue Sets Extraction", "Continue extracting sets from where you left off")
-    print_menu_item(3, "Custom Batch Size", "Continue extraction with a custom batch size")
-    
-    print_back_option()
-    
-    choice = get_user_choice(['1', '2', '3', 'b'])
-    
-    args = []
-    
-    if choice == '1':
-        args.append("--type")
-        args.append("minifigs")
-    elif choice == '2':
-        args.append("--type")
-        args.append("sets")
-    elif choice == '3':
-        item_type = input(f"{Colors.YELLOW}Item type (minifigs/sets): {Colors.ENDC}").strip().lower()
-        if item_type in ['minifigs', 'sets']:
-            args.extend(["--type", item_type])
-        else:
-            print(f"{Colors.RED}Invalid item type. Using default (minifigs).{Colors.ENDC}")
-            args.extend(["--type", "minifigs"])
+    while True:
+        print_header("Continue Extraction Menu")
         
-        batch_size = input(f"{Colors.YELLOW}Batch size: {Colors.ENDC}").strip()
-        if batch_size:
-            args.extend(["--batch-size", batch_size])
-    elif choice == 'b':
-        return
-    
-    # Ask about proxies
-    use_proxies = input(f"{Colors.YELLOW}Use proxies? (y/n): {Colors.ENDC}").strip().lower() == 'y'
-    if not use_proxies:
-        args.append("--no-proxies")
-    else:
-        proxies_file = input(f"{Colors.YELLOW}Proxies file (leave empty for default): {Colors.ENDC}").strip()
-        if proxies_file:
-            args.extend(["--proxies-file", proxies_file])
-    
-    # Ask about updating CSV
-    update_csv = input(f"{Colors.YELLOW}Update CSV files? (y/n): {Colors.ENDC}").strip().lower() == 'y'
-    if not update_csv:
-        args.append("--no-update-csv")
-    
-    run_command("continue-extract", args)
+        print_menu_item(1, "Continue Processing Images", "Continue processing images from where you left off")
+        print_menu_item(2, "Show Processing Progress", "Show current processing progress")
+        print_menu_item(3, "Continue with Minifigs Only", "Continue processing only minifigure images")
+        print_menu_item(4, "Continue with Custom Batch Size", "Continue with a custom batch size")
+        print_menu_item(5, "Continue with Limit", "Continue processing with a limit on the number of images")
+        print_menu_item(6, "Continue and Clean Up", "Continue processing and clean up local files after")
+        
+        print_back_option()
+        
+        choice = get_user_choice(['1', '2', '3', '4', '5', '6', 'b'])
+        
+        if choice == '1':
+            run_command("extract-catalog", ["--continue", "--use-proxies", "--force-own-ip"])
+        elif choice == '2':
+            run_command("extract-catalog", ["--show-progress"])
+        elif choice == '3':
+            run_command("extract-catalog", ["--continue", "--minifigs-only", "--use-proxies", "--force-own-ip"])
+        elif choice == '4':
+            batch_size = input(f"\n{Colors.YELLOW}Enter batch size: {Colors.ENDC}")
+            try:
+                batch_size = int(batch_size)
+                if batch_size > 0:
+                    run_command("extract-catalog", ["--continue", "--batch-size", str(batch_size), "--use-proxies", "--force-own-ip"])
+                else:
+                    print(f"{Colors.RED}Batch size must be greater than 0{Colors.ENDC}")
+            except ValueError:
+                print(f"{Colors.RED}Invalid batch size{Colors.ENDC}")
+        elif choice == '5':
+            limit = input(f"\n{Colors.YELLOW}Enter limit (maximum number of images to process): {Colors.ENDC}")
+            try:
+                limit = int(limit)
+                if limit > 0:
+                    run_command("extract-catalog", ["--continue", "--limit", str(limit), "--use-proxies", "--force-own-ip"])
+                else:
+                    print(f"{Colors.RED}Limit must be greater than 0{Colors.ENDC}")
+            except ValueError:
+                print(f"{Colors.RED}Invalid limit{Colors.ENDC}")
+        elif choice == '6':
+            run_command("extract-catalog", ["--continue", "--use-proxies", "--force-own-ip", "--cleanup-local"])
+        elif choice == 'b':
+            return
 
 def reset_progress_menu():
     """Show the reset progress menu."""
