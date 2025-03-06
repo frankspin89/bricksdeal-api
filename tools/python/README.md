@@ -59,6 +59,8 @@ If you're experiencing issues with Python versions:
 The CLI provides the following main commands:
 
 - `extract-catalog`: Extract and process LEGO catalog data
+- `continue-extract`: Continue extraction from where you left off
+- `interactive`: Start interactive CLI menu with guided options
 - `update-prices`: Update prices for LEGO products
 - `setup-db`: Set up the LEGO catalog database
 - `export`: Export LEGO catalog data to various targets
@@ -80,6 +82,58 @@ python3 -m bricks_deal_crawl.main extract-catalog --process-images --minifigs-on
 
 # Use proxies for extraction
 python3 -m bricks_deal_crawl.main extract-catalog --process-images --use-proxies --proxies-file input/proxies.csv
+
+# Update CSV files with new image URLs
+python3 -m bricks_deal_crawl.main extract-catalog --update-csv --minifigs-only --use-proxies
+
+# Batch processing with start index and batch size
+python3 -m bricks_deal_crawl.main extract-catalog --process-images --minifigs-only --start-index 100 --batch-size 50
+```
+
+### Continuous Batch Processing
+
+The `continue_extract.py` script allows you to process items in batches and automatically continue from where you left off:
+
+```bash
+# Process the next batch of 100 minifigs
+./continue_extract.py
+
+# Process the next batch of 200 minifigs
+./continue_extract.py --batch-size 200
+
+# Process sets instead of minifigs
+./continue_extract.py --type sets
+
+# Show current progress without processing
+./continue_extract.py --show
+
+# Reset progress tracking to start from the beginning
+./continue_extract.py --reset
+
+# Reset progress for a specific item type
+./continue_extract.py --reset-type minifigs
+```
+
+You can also use the built-in CLI command for continuous extraction:
+
+```bash
+# Process the next batch of 100 minifigs
+bricks-deal continue-extract
+
+# Process the next batch of 200 minifigs
+bricks-deal continue-extract --batch-size 200
+
+# Process sets instead of minifigs
+bricks-deal continue-extract --type sets
+
+# Show current progress without processing
+bricks-deal continue-extract --show
+
+# Reset progress tracking to start from the beginning
+bricks-deal continue-extract --reset
+
+# Reset progress for a specific item type
+bricks-deal continue-extract --reset-type minifigs
 ```
 
 ### Price Updates
@@ -150,6 +204,15 @@ This script processes all minifigures in batches:
 ./process_all_minifigs.sh
 ```
 
+### setup_environment.sh
+
+This script sets up the Python environment with the correct Python version:
+
+```bash
+# Set up the environment
+./setup_environment.sh
+```
+
 ## Directory Structure
 
 - `input/`: Input data files and proxies
@@ -180,4 +243,46 @@ The tools use the following environment variables:
 - `OXYLABS_ENDPOINT`: Oxylabs proxy endpoint (default: dc.oxylabs.io)
 - `OXYLABS_PORTS`: Comma-separated list of Oxylabs proxy ports
 
-For more detailed documentation, see the main [README.md](../../README.md) and [WORKFLOW.md](../../WORKFLOW.md) files. 
+For more detailed documentation, see the main [README.md](../../README.md) and [WORKFLOW.md](../../WORKFLOW.md) files.
+
+### Interactive Mode
+
+The CLI provides an interactive menu-driven interface that guides you through all available options:
+
+```bash
+# Start the interactive CLI menu
+bricks-deal interactive
+```
+
+This will display a colorful menu with the following options:
+
+1. **Extract Catalog**: Extract and process LEGO catalog data
+   - Extract Catalog Data
+   - Process Images
+   - Update CSV Files
+   - Continue Extraction
+   - Show Extraction Progress
+   - Reset Extraction Progress
+
+2. **Update Prices**: Update prices for LEGO products
+   - Update All Prices
+   - Update Specific Set
+
+3. **Database Management**: Set up and manage the LEGO catalog database
+   - Setup Database
+   - Clean Database
+
+4. **Export Data**: Export LEGO catalog data to various targets
+   - Export to Cloudflare
+   - Export to D1 Only
+
+5. **Cleanup Operations**: Clean up resources and temporary files
+   - Clean Cloudflare Resources
+   - Clean Temporary Files
+   - Clean Old Backups
+
+6. **Help**: Show detailed help and usage information
+
+The interactive mode is perfect for users who don't want to remember all the command-line options and prefer a guided approach.
+
+### Price Updates 

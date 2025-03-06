@@ -38,25 +38,26 @@ CLOUDFLARE_PUBLIC_URL = f"https://{os.environ.get('CLOUDFLARE_DOMAIN', 'images.b
 PROXIES_FILE = os.path.join("input", "proxies.csv")
 OXYLABS_USERNAME = os.environ.get("OXYLABS_USERNAME")
 OXYLABS_PASSWORD = os.environ.get("OXYLABS_PASSWORD")
-OXYLABS_ENDPOINT = os.environ.get("OXYLABS_ENDPOINT", "dc.oxylabs.io")
+OXYLABS_ENDPOINT = os.environ.get("OXYLABS_ENDPOINT", "dc.oxylabs.io")  # Using datacenter proxies
 try:
-    OXYLABS_PORTS = [int(port.strip()) for port in os.environ.get("OXYLABS_PORTS", "8001,8002,8003,8004,8005").split(",") if port.strip().isdigit()]
+    OXYLABS_PORTS = [int(port.strip()) for port in os.environ.get("OXYLABS_PORTS", "8000").split(",") if port.strip().isdigit()]
     if not OXYLABS_PORTS:  # Fallback if no valid ports
-        OXYLABS_PORTS = [8001, 8002, 8003, 8004, 8005]
+        OXYLABS_PORTS = [8000]  # Default port for datacenter proxies
 except Exception as e:
     print(f"Warning: Error parsing OXYLABS_PORTS: {e}. Using default ports.")
-    OXYLABS_PORTS = [8001, 8002, 8003, 8004, 8005]
+    OXYLABS_PORTS = [8000]  # Default port for datacenter proxies
 
 class ProxyManager:
     """
     Manages a pool of proxies for rotation during requests.
     Tracks proxy success/failure and prioritizes working proxies.
     """
-    def __init__(self, proxies_file: str = PROXIES_FILE, use_proxies: bool = False):
+    def __init__(self, proxies_file: str = PROXIES_FILE, use_proxies: bool = False, force_own_ip: bool = False):
         self.proxies = []
         self.working_proxies = set()
         self.failed_proxies = {}
         self.use_proxies = use_proxies
+        self.force_own_ip = force_own_ip
         self.current_index = 0
         
         if use_proxies:
@@ -67,13 +68,40 @@ class ProxyManager:
     def add_oxylabs_proxies(self):
         """Add Oxylabs proxies to the proxy pool if credentials are available"""
         if not OXYLABS_USERNAME or not OXYLABS_PASSWORD:
+            print("Warning: Oxylabs credentials not found in environment variables")
             return
         
+        print(f"Adding Oxylabs proxies with username: {OXYLABS_USERNAME}")
+        
+        # Add the main port 8000 as shown in the curl example
+        port = 8000
+        # Check if username already contains the country/session part
+        if "-country-" in OXYLABS_USERNAME or "-session-" in OXYLABS_USERNAME:
+            # Add 'user-' prefix if not already present
+            if not OXYLABS_USERNAME.startswith("user-"):
+                username = f"user-{OXYLABS_USERNAME}"
+            else:
+                username = OXYLABS_USERNAME
+        else:
+            # Default to US if no country specified
+            username = f"user-{OXYLABS_USERNAME}-country-US"
+        
+        # Create proxy URLs for both HTTP and HTTPS
+        proxy_url = f"http://{username}:{OXYLABS_PASSWORD}@{OXYLABS_ENDPOINT}:{port}"
+        if proxy_url not in self.proxies:
+            self.proxies.append(proxy_url)
+            print(f"Added Oxylabs proxy on port {port}: {proxy_url}")
+        
+        # Also add the other ports if specified
         for port in OXYLABS_PORTS:
-            proxy_url = f"http://user-{OXYLABS_USERNAME}:{OXYLABS_PASSWORD}@{OXYLABS_ENDPOINT}:{port}"
+            if port == 8000:  # Skip if already added
+                continue
+            
+            # Create proxy URLs for both HTTP and HTTPS
+            proxy_url = f"http://{username}:{OXYLABS_PASSWORD}@{OXYLABS_ENDPOINT}:{port}"
             if proxy_url not in self.proxies:
                 self.proxies.append(proxy_url)
-                print(f"Added Oxylabs proxy on port {port}")
+                print(f"Added Oxylabs proxy on port {port}: {proxy_url}")
     
     def load_proxies(self, proxies_file: str) -> None:
         """
@@ -106,6 +134,9 @@ class ProxyManager:
             Dictionary with proxy configuration for requests
         """
         if not self.use_proxies or not self.proxies:
+            if not self.force_own_ip:
+                print("WARNING: No proxies available and force_own_ip is not enabled. This request might fail.")
+                print("Consider using --force-own-ip if you want to allow direct connections.")
             return {}
         
         # First try to use a working proxy if available
@@ -134,13 +165,25 @@ class ProxyManager:
                 break
             
             if proxy_url is None:
+                if not self.force_own_ip:
+                    print("WARNING: No suitable proxy found and force_own_ip is not enabled. This request might fail.")
+                    print("Consider using --force-own-ip if you want to allow direct connections.")
                 return {}  # No suitable proxy found
         
         # Parse the proxy URL to get the scheme and actual proxy address
         try:
             if proxy_url.startswith(('http://', 'https://')):
                 scheme = proxy_url.split('://')[0]
-                return {scheme: proxy_url}
+                if OXYLABS_ENDPOINT in proxy_url:
+                    # For Oxylabs, set both http and https
+                    print(f"Using Oxylabs proxy: {proxy_url}")
+                    # According to Oxylabs docs, we need to set both http and https
+                    return {
+                        "http": proxy_url,
+                        "https": proxy_url
+                    }
+                else:
+                    return {scheme: proxy_url}
             else:
                 return {'http': f'http://{proxy_url}', 'https': f'https://{proxy_url}'}
         except Exception as e:
@@ -319,15 +362,41 @@ def download_and_optimize_image(url, output_path):
                 current_proxy = proxy_manager.get_proxy()
                 # Extract the proxy URL for tracking
                 if current_proxy:
-                    for scheme, proxy in current_proxy.items():
-                        current_proxy_url = proxy
-                        break
+                    if 'http' in current_proxy:
+                        current_proxy_url = current_proxy['http']
+                    elif 'https' in current_proxy:
+                        current_proxy_url = current_proxy['https']
+                    
                     print(f"Using proxy: {current_proxy_url} for image: {url}")
+                    # Debug information to verify proxy is being used
+                    if OXYLABS_ENDPOINT in str(current_proxy_url):
+                        print(f"DEBUG: Using Oxylabs proxy for {url}")
+                        print(f"DEBUG: Proxy config: {current_proxy}")
                 else:
+                    if not proxy_manager.force_own_ip:
+                        print(f"ERROR: No proxy available for {url} and force_own_ip is not enabled.")
+                        print("Skipping this image to avoid using your own IP.")
+                        return False
                     print(f"No proxy available, using direct connection for image: {url}")
+            elif not proxy_manager or not proxy_manager.force_own_ip:
+                print(f"ERROR: Proxy usage is disabled for {url} and force_own_ip is not enabled.")
+                print("Skipping this image to avoid using your own IP.")
+                return False
             
+            # Make the request with proxies
+            print(f"Making request to {url}...")
+            start_time = time.time()
             response = requests.get(url, headers=headers, proxies=current_proxy, timeout=timeout)
+            end_time = time.time()
+            print(f"Request completed in {end_time - start_time:.2f} seconds")
+            
             response.raise_for_status()
+            
+            # Print response headers to verify proxy usage
+            if current_proxy:
+                print(f"DEBUG: Response headers: {dict(response.headers)}")
+                if 'Via' in response.headers:
+                    print(f"DEBUG: Response 'Via' header: {response.headers.get('Via')}")
             
             # Open the image
             img = Image.open(io.BytesIO(response.content))
@@ -351,11 +420,13 @@ def download_and_optimize_image(url, output_path):
             # Mark proxy as successful if used
             if current_proxy_url and proxy_manager:
                 proxy_manager.mark_proxy_success(current_proxy_url)
+                print(f"Successfully used proxy {current_proxy_url} for {url}")
                 
             return True
             
         except requests.exceptions.ProxyError as e:
             print(f"Proxy error for image {url}: {e}")
+            print(f"Proxy error details: {str(e.__cause__)}")
             
             # Mark proxy as failed if used
             if current_proxy_url and proxy_manager:
@@ -395,14 +466,22 @@ def upload_to_cloudflare_r2(file_path, object_key):
     """Upload a file to Cloudflare R2."""
     try:
         # Check if boto3 is available
-        if 'boto3' not in globals():
+        try:
+            import boto3
+        except ImportError:
             print("boto3 is not installed. Skipping upload to Cloudflare R2.")
+            print("To install boto3, run: pip install boto3")
             return None
         
         # Check if Cloudflare credentials are available
         if not CLOUDFLARE_ACCESS_KEY_ID or not CLOUDFLARE_SECRET_ACCESS_KEY or not CLOUDFLARE_ENDPOINT:
             print("Cloudflare R2 credentials not set. Skipping upload.")
+            print(f"CLOUDFLARE_ACCESS_KEY_ID: {'Available' if CLOUDFLARE_ACCESS_KEY_ID else 'Missing'}")
+            print(f"CLOUDFLARE_SECRET_ACCESS_KEY: {'Available' if CLOUDFLARE_SECRET_ACCESS_KEY else 'Missing'}")
+            print(f"CLOUDFLARE_ENDPOINT: {'Available' if CLOUDFLARE_ENDPOINT else 'Missing'}")
             return None
+        
+        print(f"Uploading {file_path} to Cloudflare R2 as {object_key}...")
         
         # Create S3 client
         s3 = boto3.client(
@@ -481,6 +560,10 @@ def process_image_urls(limit=None, minifigs_only=False, start_index=0, batch_siz
             with open(sets_csv, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
+                    # Check if we've reached the limit
+                    if limit and len(items_with_images) >= limit:
+                        break
+                        
                     img_url = row.get('img_url', '')
                     if is_valid_image_url(img_url) and img_url not in processed_urls:
                         # Get theme name if available
@@ -511,7 +594,12 @@ def process_image_urls(limit=None, minifigs_only=False, start_index=0, batch_siz
             # Read rows up to batch_size if specified
             row_count = 0
             for row in reader:
+                # Check if we've reached the batch size
                 if batch_size > 0 and row_count >= batch_size:
+                    break
+                
+                # Check if we've reached the limit
+                if limit and len(items_with_images) >= limit:
                     break
                 
                 img_url = row.get('img_url', '')
@@ -523,17 +611,20 @@ def process_image_urls(limit=None, minifigs_only=False, start_index=0, batch_siz
                         'img_url': img_url,
                         'type': 'minifig'
                     })
-                    
-                    # Apply limit if specified
-                    if limit and len(items_with_images) >= limit:
-                        break
                 
                 row_count += 1
+    
+    # Apply the limit one more time to be sure
+    if limit and len(items_with_images) > limit:
+        items_with_images = items_with_images[:limit]
     
     print(f"Found {len(items_with_images)} items with images to process")
     
     # Track failed downloads
     failed_downloads = []
+    
+    # Track successful downloads
+    successful_downloads = 0
     
     # Process images in parallel
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
@@ -644,6 +735,7 @@ def process_image_urls(limit=None, minifigs_only=False, start_index=0, batch_siz
                     if cloudflare_url:
                         image_mapping[img_url] = cloudflare_url
                         print(f"Processed image: {img_url} -> {cloudflare_url}")
+                        successful_downloads += 1
                     else:
                         print(f"Failed to upload image to Cloudflare R2: {img_url}")
                         failed_downloads.append({
@@ -685,7 +777,7 @@ def process_image_urls(limit=None, minifigs_only=False, start_index=0, batch_siz
     
     print(f"Processed {len(image_mapping)} images. Mapping saved to {IMAGE_MAPPING_FILE}")
     
-    return len(image_mapping), len(failed_downloads)
+    return successful_downloads, len(failed_downloads)
 
 def get_theme_name(theme_id):
     """Get the theme name from the theme ID."""
@@ -889,39 +981,287 @@ def test_multiple_images():
             
             print(f"  Image #{i+1}: {filename}")
 
-def main():
-    parser = argparse.ArgumentParser(description="Extract LEGO catalog data and process images")
-    parser.add_argument("--extract-only", action="store_true", help="Only extract .gz files without processing images")
-    parser.add_argument("--process-images", action="store_true", help="Process images without extracting .gz files")
-    parser.add_argument("--update-csv", action="store_true", help="Update CSV files with new image URLs")
-    parser.add_argument("--limit", type=int, help="Limit the number of images to process")
-    parser.add_argument("--minifigs-only", action="store_true", help="Process only minifigure images")
-    parser.add_argument("--test", action="store_true", help="Run test function for multiple images")
-    parser.add_argument("--use-proxies", action="store_true", help="Use proxy rotation for image downloads")
-    parser.add_argument("--proxies-file", default=PROXIES_FILE, help="File containing proxy URLs")
-    parser.add_argument("--start-index", type=int, default=0, help="Start index for batch processing")
-    parser.add_argument("--batch-size", type=int, default=0, help="Batch size for processing (0 means process all)")
+def rebuild_image_mapping(force_upload=False):
+    """
+    Rebuild the image mapping by scanning the catalog-images directory.
+    This is useful when there are images in the directory that are not in the mapping file.
     
-    args = parser.parse_args()
+    Args:
+        force_upload (bool): If True, upload all images to Cloudflare R2 even if they're already mapped.
+    """
+    print("Rebuilding image mapping from catalog-images directory...")
+    
+    # Ensure the directory exists
+    if not os.path.exists(IMAGES_DIR):
+        print(f"Images directory not found: {IMAGES_DIR}")
+        return
+    
+    # Load existing image mapping if it exists
+    image_mapping = {}
+    if os.path.exists(IMAGE_MAPPING_FILE):
+        with open(IMAGE_MAPPING_FILE, 'r') as f:
+            image_mapping = json.load(f)
+    
+    # Get all image files in the directory
+    image_files = [f for f in os.listdir(IMAGES_DIR) if f.endswith('.jpg') and os.path.isfile(os.path.join(IMAGES_DIR, f))]
+    print(f"Found {len(image_files)} image files in {IMAGES_DIR}")
+    
+    # Reverse mapping to find original URLs
+    reverse_mapping = {v: k for k, v in image_mapping.items()}
+    
+    # Count of new mappings added
+    new_mappings = 0
+    uploaded_images = 0
+    
+    # Process each image file
+    for image_file in image_files:
+        # Create the Cloudflare URL
+        if image_file.startswith('lego-minifig-'):
+            # This is a minifig image
+            r2_object_key = f"catalog/minifig/{image_file}"
+            item_type = 'minifig'
+        else:
+            # This is a set image
+            r2_object_key = f"catalog/set/{image_file}"
+            item_type = 'set'
+        
+        cloudflare_url = f"{CLOUDFLARE_PUBLIC_URL}/{r2_object_key}"
+        local_path = os.path.join(IMAGES_DIR, image_file)
+        
+        # Check if this URL is already in the reverse mapping
+        if cloudflare_url in reverse_mapping and not force_upload:
+            # Already mapped, skip
+            continue
+        
+        # Upload to Cloudflare R2 if force_upload is True
+        if force_upload:
+            print(f"Uploading {image_file} to Cloudflare R2...")
+            cloudflare_url = upload_to_cloudflare_r2(local_path, r2_object_key)
+            if cloudflare_url:
+                uploaded_images += 1
+        
+        # Try to extract the set/fig number from the filename using different patterns
+        if item_type == 'set':
+            # Try different patterns to extract the set number
+            patterns = [
+                r'-([^-]+)\.jpg$',  # Standard pattern: lego-theme-name-number.jpg
+                r'lego-([^-]+)-([^-]+)-([^-]+)\.jpg$',  # Three-part pattern
+                r'lego-([^-]+)-([^-]+)\.jpg$',  # Two-part pattern
+            ]
+            
+            set_num = None
+            for pattern in patterns:
+                match = re.search(pattern, image_file)
+                if match:
+                    # Use the last group as the set number
+                    set_num = match.group(match.lastindex)
+                    break
+            
+            if set_num:
+                # Try different variations of the original URL
+                original_urls = [
+                    f"https://cdn.rebrickable.com/media/sets/{set_num}.jpg",
+                    f"https://cdn.rebrickable.com/media/sets/{set_num}-1.jpg",
+                    f"https://cdn.rebrickable.com/media/sets/{set_num}-2.jpg",
+                ]
+                
+                # Add to mapping if not already present
+                for original_url in original_urls:
+                    if original_url not in image_mapping:
+                        image_mapping[original_url] = cloudflare_url
+                        new_mappings += 1
+                        break
+        else:  # minifig
+            # Try different patterns to extract the fig number
+            patterns = [
+                r'-(fig-\d+)(?:-[a-z]+\d*)?\.jpg$',  # Standard pattern
+                r'lego-minifig-([^-]+)-([^-]+)\.jpg$',  # Two-part pattern
+            ]
+            
+            fig_num = None
+            for pattern in patterns:
+                match = re.search(pattern, image_file)
+                if match:
+                    # Use the first group as the fig number
+                    fig_num = match.group(1)
+                    break
+            
+            if fig_num:
+                # Try different variations of the original URL
+                original_urls = [
+                    f"https://cdn.rebrickable.com/media/sets/{fig_num}.jpg",
+                    f"https://cdn.rebrickable.com/media/sets/{fig_num}-1.jpg",
+                ]
+                
+                # Add to mapping if not already present
+                for original_url in original_urls:
+                    if original_url not in image_mapping:
+                        image_mapping[original_url] = cloudflare_url
+                        new_mappings += 1
+                        break
+    
+    # Save updated image mapping
+    with open(IMAGE_MAPPING_FILE, 'w') as f:
+        json.dump(image_mapping, f, indent=2)
+    
+    print(f"Added {new_mappings} new mappings to image_mapping.json")
+    if force_upload:
+        print(f"Uploaded {uploaded_images} images to Cloudflare R2")
+    print(f"Total mappings: {len(image_mapping)}")
+    
+    # Update CSV files with the new image URLs
+    update_csv_with_new_urls()
+    
+    return new_mappings
+
+def test_proxy():
+    """Test the proxy configuration by making a request to a test URL."""
+    print("Testing proxy configuration...")
+    
+    # Initialize proxy manager with proxies enabled
+    global proxy_manager
+    test_proxy_manager = proxy_manager
+    
+    if not test_proxy_manager.proxies:
+        print("No proxies available for testing.")
+        if not test_proxy_manager.force_own_ip:
+            print("Since force_own_ip is not enabled, no direct connections will be allowed.")
+            return False
+        else:
+            print("Direct connections will be used as fallback since force_own_ip is enabled.")
+    
+    # Test URL that returns IP information - use Oxylabs' own test URL
+    test_url = "http://ip.oxylabs.io"
+    
+    # Set up headers
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    }
+    
+    # Try each proxy
+    for proxy_url in test_proxy_manager.proxies:
+        print(f"\nTesting proxy: {proxy_url}")
+        
+        # Get proxy configuration
+        current_proxy = {}
+        if proxy_url.startswith(('http://', 'https://')):
+            scheme = proxy_url.split('://')[0]
+            if OXYLABS_ENDPOINT in proxy_url:
+                # For Oxylabs, set both http and https
+                current_proxy = {
+                    "http": proxy_url,
+                    "https": proxy_url
+                }
+            else:
+                current_proxy = {scheme: proxy_url}
+        else:
+            current_proxy = {'http': f'http://{proxy_url}', 'https': f'https://{proxy_url}'}
+        
+        print(f"Proxy configuration: {current_proxy}")
+        
+        try:
+            # Make request with proxy
+            print(f"Making request to {test_url}...")
+            response = requests.get(test_url, headers=headers, proxies=current_proxy, timeout=20)
+            response.raise_for_status()
+            
+            # Print response
+            print(f"Response status: {response.status_code}")
+            print(f"Response body: {response.text}")
+            
+            # Check if the IP is different from the local IP
+            if "84.83.5.229" not in response.text:
+                print(f"✅ Proxy test successful for {proxy_url} - Using proxy IP: {response.text.strip()}")
+                test_proxy_manager.mark_proxy_success(proxy_url)
+            else:
+                print(f"❌ Proxy test failed for {proxy_url} - Still using local IP: {response.text.strip()}")
+                test_proxy_manager.mark_proxy_failure(proxy_url)
+            
+        except Exception as e:
+            print(f"❌ Proxy test failed for {proxy_url}: {str(e)}")
+            test_proxy_manager.mark_proxy_failure(proxy_url)
+    
+    # Test direct connection if force_own_ip is enabled
+    if test_proxy_manager.force_own_ip:
+        print("\nTesting direct connection (force_own_ip is enabled):")
+        try:
+            # Make request without proxy
+            print(f"Making request to {test_url} without proxy...")
+            response = requests.get(test_url, headers=headers, timeout=20)
+            response.raise_for_status()
+            
+            # Print response
+            print(f"Response status: {response.status_code}")
+            print(f"Response body: {response.text}")
+            print(f"✅ Direct connection test successful - Using IP: {response.text.strip()}")
+        except Exception as e:
+            print(f"❌ Direct connection test failed: {str(e)}")
+    
+    # Summary
+    print("\nProxy Test Summary:")
+    print(f"Total proxies tested: {len(test_proxy_manager.proxies)}")
+    print(f"Working proxies: {len(test_proxy_manager.working_proxies)}")
+    print(f"Failed proxies: {len(test_proxy_manager.failed_proxies)}")
+    
+    if test_proxy_manager.working_proxies:
+        print("\n✅ At least one proxy is working correctly.")
+        return True
+    elif test_proxy_manager.force_own_ip:
+        print("\n⚠️ No working proxies found, but direct connections are allowed.")
+        return True
+    else:
+        print("\n❌ No working proxies found and direct connections are not allowed.")
+        print("Use --force-own-ip if you want to allow direct connections.")
+        return False
+
+def main(args=None):
+    if args is None:
+        parser = argparse.ArgumentParser(description="Extract LEGO catalog data and process images")
+        parser.add_argument("--extract-only", action="store_true", help="Only extract .gz files without processing images")
+        parser.add_argument("--process-images", action="store_true", help="Process images without extracting .gz files")
+        parser.add_argument("--update-csv", action="store_true", help="Update CSV files with new image URLs")
+        parser.add_argument("--limit", type=int, help="Limit the number of images to process")
+        parser.add_argument("--minifigs-only", action="store_true", help="Process only minifigure images")
+        parser.add_argument("--test", action="store_true", help="Run test function for multiple images")
+        parser.add_argument("--use-proxies", action="store_true", help="Use proxy rotation for image downloads")
+        parser.add_argument("--proxies-file", default=PROXIES_FILE, help="File containing proxy URLs")
+        parser.add_argument("--start-index", type=int, default=0, help="Start index for batch processing")
+        parser.add_argument("--batch-size", type=int, default=0, help="Batch size for processing (0 means process all)")
+        parser.add_argument("--rebuild-mapping", action="store_true", help="Rebuild image mapping from catalog-images directory")
+        parser.add_argument("--force-upload", action="store_true", help="Force upload all images to Cloudflare R2 when rebuilding mapping")
+        parser.add_argument("--test-proxy", action="store_true", help="Test proxy configuration")
+        parser.add_argument("--force-own-ip", action="store_true", help="Allow using your own IP address if no proxy is available")
+        
+        args = parser.parse_args()
     
     # Initialize the global proxy manager if proxy usage is requested
     global proxy_manager
-    proxy_manager = ProxyManager(proxies_file=args.proxies_file, use_proxies=args.use_proxies)
+    proxy_manager = ProxyManager(proxies_file=args.proxies_file, use_proxies=args.use_proxies, force_own_ip=args.force_own_ip)
+    
+    # Test proxy configuration if requested
+    if args.test_proxy:
+        test_proxy()
+        return
     
     # Run test function if requested
     if args.test:
         test_multiple_images()
         return
     
+    # Rebuild image mapping if requested
+    if args.rebuild_mapping:
+        rebuild_image_mapping(force_upload=args.force_upload)
+        return
+    
     # Ensure directories exist
     ensure_directories()
     
     # Extract .gz files if requested or if no specific action is requested
-    if args.extract_only or (not args.process_images and not args.update_csv and not args.test):
+    if args.extract_only or (not args.process_images and not args.update_csv and not args.test and not args.rebuild_mapping):
         extract_gz_files()
     
     # Process images if requested or if no specific action is requested
-    if args.process_images or (not args.extract_only and not args.update_csv and not args.test):
+    if args.process_images or (not args.extract_only and not args.update_csv and not args.test and not args.rebuild_mapping):
         successful, failed = process_image_urls(
             limit=args.limit, 
             minifigs_only=args.minifigs_only,
@@ -929,9 +1269,14 @@ def main():
             batch_size=args.batch_size
         )
         print(f"Summary: {successful} images processed successfully, {failed} images failed")
+        
+        # Always update CSV files after processing images to ensure URLs are updated
+        if not args.update_csv:
+            print("Automatically updating CSV files with new image URLs...")
+            update_csv_with_new_urls()
     
-    # Update CSV files if requested or if no specific action is requested
-    if args.update_csv or (not args.extract_only and not args.process_images and not args.test):
+    # Update CSV files if explicitly requested
+    if args.update_csv:
         update_csv_with_new_urls()
     
     print("Done!")

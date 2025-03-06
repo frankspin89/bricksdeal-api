@@ -25,6 +25,36 @@ def main():
     extract_parser.add_argument("--limit", type=int, help="Limit the number of images to process")
     extract_parser.add_argument("--minifigs-only", action="store_true", help="Process only minifigure images")
     extract_parser.add_argument("--test", action="store_true", help="Run test function for multiple images")
+    extract_parser.add_argument("--use-proxies", action="store_true", help="Use proxy rotation for image downloads")
+    extract_parser.add_argument("--proxies-file", type=str, default="input/proxies.csv", help="File containing proxy URLs")
+    extract_parser.add_argument("--start-index", type=int, default=0, help="Start index for batch processing")
+    extract_parser.add_argument("--batch-size", type=int, default=0, help="Batch size for processing (0 means process all)")
+    extract_parser.add_argument("--rebuild-mapping", action="store_true", help="Rebuild image mapping from catalog-images directory")
+    extract_parser.add_argument("--force-upload", action="store_true", help="Force upload all images to Cloudflare R2 when rebuilding mapping")
+    extract_parser.add_argument("--test-proxy", action="store_true", help="Test proxy configuration")
+    extract_parser.add_argument("--force-own-ip", action="store_true", help="Allow using your own IP address if no proxy is available")
+    
+    # Continue extraction (new command)
+    continue_parser = subparsers.add_parser("continue-extract", help="Continue extracting LEGO catalog data from where you left off")
+    continue_parser.add_argument("--type", choices=["minifigs", "sets"], default="minifigs",
+                        help="Type of items to process (default: minifigs)")
+    continue_parser.add_argument("--batch-size", type=int, default=100,
+                        help="Number of items to process in this batch (default: 100)")
+    continue_parser.add_argument("--no-proxies", action="store_true",
+                        help="Disable proxy rotation for image downloads")
+    continue_parser.add_argument("--proxies-file", type=str, default="input/proxies.csv",
+                        help="File containing proxy URLs")
+    continue_parser.add_argument("--no-update-csv", action="store_true",
+                        help="Don't update CSV files with new image URLs")
+    continue_parser.add_argument("--reset", action="store_true",
+                        help="Reset progress tracking and start from the beginning")
+    continue_parser.add_argument("--reset-type", choices=["minifigs", "sets"],
+                        help="Reset progress for a specific item type")
+    continue_parser.add_argument("--show", action="store_true",
+                        help="Show current progress without running extraction")
+    
+    # Interactive mode (new command)
+    interactive_parser = subparsers.add_parser("interactive", help="Start interactive CLI menu")
     
     # Update prices
     prices_parser = subparsers.add_parser("update-prices", help="Update LEGO prices")
@@ -77,6 +107,12 @@ def main():
         if args.command == "extract-catalog":
             from bricks_deal_crawl.catalog.extract import main as extract_main
             return extract_main(args)
+        elif args.command == "continue-extract":
+            from bricks_deal_crawl.catalog.continue_extract import main as continue_main
+            return continue_main(args)
+        elif args.command == "interactive":
+            from bricks_deal_crawl.utils.interactive import main as interactive_main
+            return interactive_main()
         elif args.command == "update-prices":
             from bricks_deal_crawl.utils.update_prices import main as prices_main
             return prices_main(args)

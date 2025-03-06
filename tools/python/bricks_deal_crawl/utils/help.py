@@ -72,8 +72,25 @@ def show_help():
         "--process-images": "Process images without extracting .gz files",
         "--update-csv": "Update CSV files with new image URLs",
         "--limit N": "Limit the number of images to process",
-        "--minifigs-only": "Process only minifigure images"
+        "--minifigs-only": "Process only minifigure images",
+        "--use-proxies": "Use proxy rotation for image downloads",
+        "--proxies-file FILE": "File containing proxy URLs (default: input/proxies.csv)",
+        "--start-index N": "Start index for batch processing (default: 0)",
+        "--batch-size N": "Batch size for processing (0 means process all)"
     })
+    
+    print_command("continue-extract", "Continue extracting LEGO catalog data from where you left off", {
+        "--type TYPE": "Type of items to process: minifigs or sets (default: minifigs)",
+        "--batch-size N": "Number of items to process in this batch (default: 100)",
+        "--no-proxies": "Disable proxy rotation for image downloads",
+        "--proxies-file FILE": "File containing proxy URLs (default: input/proxies.csv)",
+        "--no-update-csv": "Don't update CSV files with new image URLs",
+        "--reset": "Reset progress tracking and start from the beginning",
+        "--reset-type TYPE": "Reset progress for a specific item type (minifigs or sets)",
+        "--show": "Show current progress without running extraction"
+    })
+    
+    print_command("interactive", "Start interactive CLI menu", {})
     
     print_command("update-prices", "Update prices for LEGO products", {
         "--set-num NUMBER": "LEGO set number to update (e.g., 10353)"
