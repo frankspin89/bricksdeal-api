@@ -33,6 +33,11 @@ def main():
     extract_parser.add_argument("--force-upload", action="store_true", help="Force upload all images to Cloudflare R2 when rebuilding mapping")
     extract_parser.add_argument("--test-proxy", action="store_true", help="Test proxy configuration")
     extract_parser.add_argument("--force-own-ip", action="store_true", help="Allow using your own IP address if no proxy is available")
+    extract_parser.add_argument("--dry-run", action="store_true", help="Skip downloading images but perform all other operations")
+    extract_parser.add_argument("--validate-urls", action="store_true", help="Validate image URLs in the mapping file")
+    extract_parser.add_argument("--validate-all", action="store_true", help="Validate all URLs, not just Cloudflare ones")
+    extract_parser.add_argument("--verify-r2", action="store_true", help="Verify that all objects in the R2 bucket are mapped in the CSV files")
+    extract_parser.add_argument("--cleanup-local", action="store_true", help="Remove local files that have been successfully uploaded to R2")
     
     # Continue extraction (new command)
     continue_parser = subparsers.add_parser("continue-extract", help="Continue extracting LEGO catalog data from where you left off")

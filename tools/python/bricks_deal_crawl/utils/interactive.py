@@ -92,11 +92,14 @@ def extract_catalog_menu():
         print_menu_item(6, "Reset Extraction Progress", "Reset extraction progress tracking")
         print_menu_item(7, "Rebuild Image Mapping", "Rebuild image mapping from catalog-images directory")
         print_menu_item(8, "Test Proxy Configuration", "Test if proxies are working correctly")
+        print_menu_item(9, "Validate Image URLs", "Check if image URLs are accessible")
+        print_menu_item(10, "Dry Run Processing", "Process images without downloading (update mappings only)")
+        print_menu_item(11, "Verify R2 Bucket", "Verify R2 bucket mappings and optionally clean up local files")
         
         print_back_option()
         print_exit_option()
         
-        choice = get_user_choice(['1', '2', '3', '4', '5', '6', '7', '8', 'b', 'q'])
+        choice = get_user_choice(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', 'b', 'q'])
         
         if choice == '1':
             extract_only_menu()
@@ -114,6 +117,12 @@ def extract_catalog_menu():
             rebuild_mapping_menu()
         elif choice == '8':
             test_proxy_menu()
+        elif choice == '9':
+            validate_urls_menu()
+        elif choice == '10':
+            dry_run_menu()
+        elif choice == '11':
+            verify_r2_menu()
         elif choice == 'b':
             return
         elif choice == 'q':
@@ -452,6 +461,102 @@ def test_proxy_menu():
         args.append("--force-own-ip")
     
     run_command("extract-catalog", args)
+
+def validate_urls_menu():
+    """Show the validate URLs menu."""
+    print_header("Validate Image URLs")
+    
+    print("This will check if image URLs in the mapping file are accessible.")
+    print("It will make HEAD requests to each URL and report any that return errors.")
+    
+    print_menu_item(1, "Validate Cloudflare URLs Only", "Only check URLs on images.bricksdeal.com")
+    print_menu_item(2, "Validate All URLs", "Check all URLs in the mapping file")
+    
+    print_back_option()
+    
+    choice = get_user_choice(['1', '2', 'b'])
+    
+    args = ["--validate-urls"]
+    
+    if choice == '1':
+        pass  # Use default args
+    elif choice == '2':
+        args.append("--validate-all")
+    elif choice == 'b':
+        return
+    
+    # Ask about proxies for validation
+    use_proxies = input(f"{Colors.YELLOW}Use proxies for validation? (y/n): {Colors.ENDC}").strip().lower() == 'y'
+    if use_proxies:
+        args.append("--use-proxies")
+        proxies_file = input(f"{Colors.YELLOW}Proxies file (leave empty for default): {Colors.ENDC}").strip()
+        if proxies_file:
+            args.extend(["--proxies-file", proxies_file])
+        
+        # Ask about allowing direct connections
+        force_own_ip = input(f"{Colors.YELLOW}Allow using your own IP as fallback? (y/n): {Colors.ENDC}").strip().lower() == 'y'
+        if force_own_ip:
+            args.append("--force-own-ip")
+    
+    run_command("extract-catalog", args)
+
+def dry_run_menu():
+    """Show the dry run menu."""
+    print_header("Dry Run Processing")
+    
+    print("This will process images without downloading them.")
+    print("It will update mappings and CSV files based on existing images.")
+    
+    print_menu_item(1, "Process All Images", "Process all catalog images")
+    print_menu_item(2, "Process Minifigs Only", "Process only minifigure images")
+    print_menu_item(3, "Process with Limit", "Process with a limit on the number of images")
+    
+    print_back_option()
+    
+    choice = get_user_choice(['1', '2', '3', 'b'])
+    
+    args = ["--process-images", "--dry-run"]
+    
+    if choice == '1':
+        pass  # Use default args
+    elif choice == '2':
+        args.append("--minifigs-only")
+    elif choice == '3':
+        limit = input(f"{Colors.YELLOW}Limit (number of images): {Colors.ENDC}").strip()
+        if limit:
+            args.extend(["--limit", limit])
+    elif choice == 'b':
+        return
+    
+    run_command("extract-catalog", args)
+
+def verify_r2_menu():
+    """Show the verify R2 bucket menu."""
+    while True:
+        print_header("Verify R2 Bucket Menu")
+        
+        print_menu_item(1, "Verify R2 Bucket Mappings", "Check if all objects in R2 are mapped in CSV files")
+        print_menu_item(2, "Verify and Clean Up Local Files", "Verify mappings and remove local files that are in R2 and CSV files")
+        print_menu_item(3, "Clean Up Local Files Only", "Remove local files that are mapped in CSV files (no R2 access needed)")
+        
+        print_back_option()
+        
+        choice = get_user_choice(['1', '2', '3', 'b'])
+        
+        if choice == '1':
+            run_command("extract-catalog", ["--verify-r2"])
+        elif choice == '2':
+            print(f"\n{Colors.YELLOW}Warning: This will remove local files that have been successfully uploaded to R2 and mapped in CSV files.{Colors.ENDC}")
+            confirm = input(f"{Colors.RED}Are you sure you want to continue? (y/n): {Colors.ENDC}").strip().lower()
+            if confirm == 'y':
+                run_command("extract-catalog", ["--verify-r2", "--cleanup-local"])
+        elif choice == '3':
+            print(f"\n{Colors.YELLOW}Warning: This will remove local files that are mapped in CSV files without checking R2.{Colors.ENDC}")
+            confirm = input(f"{Colors.RED}Are you sure you want to continue? (y/n): {Colors.ENDC}").strip().lower()
+            if confirm == 'y':
+                run_command("extract-catalog", ["--cleanup-local"])
+        elif choice == 'b':
+            return
 
 def main_menu():
     """Show the main menu."""

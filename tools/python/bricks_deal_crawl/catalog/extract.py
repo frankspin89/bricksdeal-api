@@ -31,7 +31,7 @@ IMAGE_MAPPING_FILE = os.path.join(IMAGES_DIR, "image_mapping.json")
 CLOUDFLARE_ENDPOINT = f"https://{os.environ.get('CLOUDFLARE_ACCOUNT_ID')}.r2.cloudflarestorage.com"
 CLOUDFLARE_ACCESS_KEY_ID = os.environ.get("CLOUDFLARE_ACCESS_KEY_ID")
 CLOUDFLARE_SECRET_ACCESS_KEY = os.environ.get("CLOUDFLARE_SECRET_ACCESS_KEY")
-CLOUDFLARE_BUCKET_NAME = os.environ.get("CLOUDFLARE_R2_BUCKET", "lego-images")
+CLOUDFLARE_R2_BUCKET_NAME = os.environ.get("CLOUDFLARE_R2_BUCKET", "lego-images")
 CLOUDFLARE_PUBLIC_URL = f"https://{os.environ.get('CLOUDFLARE_DOMAIN', 'images.bricksdeal.com')}"
 
 # Proxy configuration
@@ -494,7 +494,7 @@ def upload_to_cloudflare_r2(file_path, object_key):
         # Upload file
         s3.upload_file(
             file_path, 
-            CLOUDFLARE_BUCKET_NAME, 
+            CLOUDFLARE_R2_BUCKET_NAME, 
             object_key,
             ExtraArgs={
                 'ContentType': 'image/jpeg',
@@ -508,14 +508,19 @@ def upload_to_cloudflare_r2(file_path, object_key):
         print(f"Error uploading to Cloudflare R2: {str(e)}")
         return None
 
-def process_image_urls(limit=None, minifigs_only=False, start_index=0, batch_size=0):
-    """Process image URLs in the catalog data.
+def process_image_urls(limit=None, minifigs_only=False, start_index=0, batch_size=0, dry_run=False):
+    """
+    Process image URLs from the catalog data.
     
     Args:
-        limit (int, optional): Limit the number of images to process. Defaults to None (process all).
-        minifigs_only (bool, optional): Process only minifigure images. Defaults to False.
-        start_index (int, optional): Start index for batch processing. Defaults to 0.
-        batch_size (int, optional): Batch size for processing. Defaults to 0 (process all).
+        limit: Maximum number of images to process
+        minifigs_only: Only process minifigure images
+        start_index: Start index for batch processing
+        batch_size: Batch size for processing
+        dry_run: If True, skip downloading images but update mappings
+    
+    Returns:
+        Tuple of (successful_count, failed_count)
     """
     print("Processing image URLs in catalog data...")
     
@@ -525,259 +530,175 @@ def process_image_urls(limit=None, minifigs_only=False, start_index=0, batch_siz
         with open(IMAGE_MAPPING_FILE, 'r') as f:
             image_mapping = json.load(f)
     
-    # Create a set of already processed URLs (both original and processed)
-    processed_urls = set(image_mapping.keys()).union(set(image_mapping.values()))
+    # Create a reverse mapping for quick lookup
+    reverse_mapping = {v: k for k, v in image_mapping.items()}
     
-    # Track processed item IDs to handle multiple images for the same item
-    processed_item_ids = {}
-    for url, mapped_url in image_mapping.items():
-        # Extract item ID from the mapped URL
-        if '/set/' in mapped_url:
-            # Extract set number from the end of the URL
-            match = re.search(r'-([^-]+)\.jpg$', mapped_url)
-            if match:
-                item_id = match.group(1)
-                processed_item_ids[item_id] = processed_item_ids.get(item_id, 0) + 1
-        elif '/minifig/' in mapped_url:
-            # Extract fig number from the end of the URL
-            match = re.search(r'-(fig-\d+)\.jpg$', mapped_url)
-            if match:
-                item_id = match.group(1)
-                processed_item_ids[item_id] = processed_item_ids.get(item_id, 0) + 1
-    
-    # Initialize items list
-    items_with_images = []
-    
-    # Process sets.csv for img_url if not minifigs_only
+    # Get image URLs from sets.csv
+    sets_urls = []
     if not minifigs_only:
-        sets_csv = os.path.join(EXTRACTED_DIR, "sets.csv")
-        if not os.path.exists(sets_csv):
-            print(f"Sets CSV file not found: {sets_csv}")
-            if minifigs_only:
-                return
-        else:
-            # Read the sets CSV file
-            with open(sets_csv, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    # Check if we've reached the limit
-                    if limit and len(items_with_images) >= limit:
-                        break
-                        
-                    img_url = row.get('img_url', '')
-                    if is_valid_image_url(img_url) and img_url not in processed_urls:
-                        # Get theme name if available
-                        theme_id = row.get('theme_id', '')
-                        theme_name = get_theme_name(theme_id) if theme_id else ''
-                        
-                        items_with_images.append({
-                            'set_num': row.get('set_num', ''),
-                            'name': row.get('name', ''),
-                            'theme_name': theme_name,
-                            'img_url': img_url,
-                            'type': 'set'
-                        })
-    
-    # Process minifigs.csv for img_url if limit allows or if minifigs_only
-    minifigs_csv = os.path.join(EXTRACTED_DIR, "minifigs.csv")
-    if os.path.exists(minifigs_csv) and (minifigs_only or not limit or len(items_with_images) < limit):
-        with open(minifigs_csv, 'r', encoding='utf-8') as f:
+        with open(os.path.join(EXTRACTED_DIR, "sets.csv"), 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
-            
-            # Skip rows before start_index
-            for _ in range(start_index):
-                try:
-                    next(reader)
-                except StopIteration:
-                    break
-            
-            # Read rows up to batch_size if specified
-            row_count = 0
             for row in reader:
-                # Check if we've reached the batch size
-                if batch_size > 0 and row_count >= batch_size:
-                    break
-                
-                # Check if we've reached the limit
-                if limit and len(items_with_images) >= limit:
-                    break
-                
-                img_url = row.get('img_url', '')
-                if is_valid_image_url(img_url) and img_url not in processed_urls:
-                    items_with_images.append({
-                        'set_num': row.get('fig_num', ''),
-                        'name': row.get('name', ''),
-                        'theme_name': '',  # Minifigs don't have themes in the CSV
-                        'img_url': img_url,
-                        'type': 'minifig'
+                if 'img_url' in row and is_valid_image_url(row['img_url']):
+                    # Skip if the URL is already a Cloudflare URL
+                    if "images.bricksdeal.com" in row['img_url']:
+                        continue
+                    sets_urls.append({
+                        'url': row['img_url'],
+                        'set_num': row['set_num'],
+                        'name': row['name'],
+                        'theme_id': row['theme_id']
                     })
-                
-                row_count += 1
     
-    # Apply the limit one more time to be sure
-    if limit and len(items_with_images) > limit:
-        items_with_images = items_with_images[:limit]
-    
-    print(f"Found {len(items_with_images)} items with images to process")
-    
-    # Track failed downloads
-    failed_downloads = []
-    
-    # Track successful downloads
-    successful_downloads = 0
-    
-    # Process images in parallel
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        futures = []
-        
-        for item_data in items_with_images:
-            img_url = item_data['img_url']
-            item_id = item_data['set_num']
-            item_type = item_data['type']
-            item_name = item_data['name']
-            theme_name = item_data['theme_name']
-            
-            # Skip if already processed
-            if img_url in processed_urls:
-                continue
-            
-            # Check if we already have images for this item
-            image_count = processed_item_ids.get(item_id, 0)
-            # Increment the count for this item
-            processed_item_ids[item_id] = image_count + 1
-            
-            # Create SEO-friendly filename
-            if item_type == 'set':
-                # Format: lego-[theme]-[set-name]-[set-number]-[view].jpg
-                theme_part = f"{theme_name.lower()}-" if theme_name else ""
-                
-                # Add view suffix if this is not the first image
-                view_suffix = ""
-                if image_count > 0:
-                    # Use descriptive suffixes for the first few images
-                    if image_count == 1:
-                        view_suffix = "-alt"
-                    elif image_count == 2:
-                        view_suffix = "-back"
-                    elif image_count == 3:
-                        view_suffix = "-side"
-                    else:
-                        # For more images, use a numeric suffix
-                        view_suffix = f"-view{image_count}"
-                
-                filename = f"lego-{theme_part}{item_name.lower()}-{item_id}{view_suffix}"
-                
-                # Clean up the filename
-                filename = re.sub(r'[^a-zA-Z0-9-]', '-', filename)
-                filename = re.sub(r'-+', '-', filename)
-                filename = filename.strip('-')
-                
-                # Ensure the filename is not too long
-                if len(filename) > 70:  # Increased length to accommodate view suffix
-                    # Try to preserve the set number and view suffix at the end
-                    suffix_len = len(f"-{item_id}{view_suffix}")
-                    base = filename[:70-suffix_len]
-                    last_dash = base.rfind('-')
-                    if last_dash > 40:  # Only truncate at dash if we're not losing too much
-                        base = base[:last_dash]
-                    filename = f"{base}-{item_id}{view_suffix}"
-                
-                # Add extension
-                filename = f"{filename}.jpg"
-            else:  # minifig
-                # Format: lego-minifig-[name]-[fig-number]-[view].jpg
-                clean_name = re.sub(r'[^a-zA-Z0-9]', '-', item_name)
-                clean_name = re.sub(r'-+', '-', clean_name)
-                clean_name = clean_name.strip('-').lower()
-                
-                # Add view suffix if this is not the first image
-                view_suffix = ""
-                if image_count > 0:
-                    # Use descriptive suffixes for the first few images
-                    if image_count == 1:
-                        view_suffix = "-alt"
-                    elif image_count == 2:
-                        view_suffix = "-back"
-                    elif image_count == 3:
-                        view_suffix = "-side"
-                    else:
-                        # For more images, use a numeric suffix
-                        view_suffix = f"-view{image_count}"
-                
-                # Limit name length
-                if len(clean_name) > 40:
-                    clean_name = clean_name[:40]
-                    last_dash = clean_name.rfind('-')
-                    if last_dash > 30:  # Only truncate at dash if we're not losing too much
-                        clean_name = clean_name[:last_dash]
-                
-                filename = f"lego-minifig-{clean_name}-{item_id}{view_suffix}.jpg"
-            
-            local_path = os.path.join(IMAGES_DIR, filename)
-            r2_object_key = f"catalog/{item_type}/{filename}"
-            
-            # Submit download and optimization task
-            future = executor.submit(
-                download_and_optimize_image,
-                img_url,
-                local_path
-            )
-            futures.append((future, img_url, local_path, r2_object_key, item_data))
-        
-        # Process results
-        for future, img_url, local_path, r2_object_key, item_data in futures:
-            try:
-                if future.result():
-                    # Upload to Cloudflare R2
-                    cloudflare_url = upload_to_cloudflare_r2(local_path, r2_object_key)
-                    
-                    # Update image mapping
-                    if cloudflare_url:
-                        image_mapping[img_url] = cloudflare_url
-                        print(f"Processed image: {img_url} -> {cloudflare_url}")
-                        successful_downloads += 1
-                    else:
-                        print(f"Failed to upload image to Cloudflare R2: {img_url}")
-                        failed_downloads.append({
-                            'url': img_url,
-                            'item_id': item_data['set_num'],
-                            'name': item_data['name'],
-                            'type': item_data['type'],
-                            'error': 'Failed to upload to Cloudflare R2'
-                        })
-                else:
-                    print(f"Failed to download/process image: {img_url}")
-                    failed_downloads.append({
-                        'url': img_url,
-                        'item_id': item_data['set_num'],
-                        'name': item_data['name'],
-                        'type': item_data['type'],
-                        'error': 'Failed to download or process image after 3 retries'
-                    })
-            except Exception as e:
-                print(f"Error processing image {img_url}: {str(e)}")
-                failed_downloads.append({
-                    'url': img_url,
-                    'item_id': item_data['set_num'],
-                    'name': item_data['name'],
-                    'type': item_data['type'],
-                    'error': str(e)
+    # Get image URLs from minifigs.csv
+    minifigs_urls = []
+    with open(os.path.join(EXTRACTED_DIR, "minifigs.csv"), 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            if 'img_url' in row and is_valid_image_url(row['img_url']):
+                # Skip if the URL is already a Cloudflare URL
+                if "images.bricksdeal.com" in row['img_url']:
+                    continue
+                minifigs_urls.append({
+                    'url': row['img_url'],
+                    'fig_num': row['fig_num'],
+                    'name': row['name']
                 })
     
-    # Save updated image mapping
+    # Combine URLs
+    all_urls = []
+    if not minifigs_only:
+        all_urls.extend([{'url': item['url'], 'type': 'set', 'data': item} for item in sets_urls])
+    all_urls.extend([{'url': item['url'], 'type': 'minifig', 'data': item} for item in minifigs_urls])
+    
+    # Apply limit if specified
+    if limit is not None and limit > 0:
+        all_urls = all_urls[:limit]
+    
+    # Apply batch processing if specified
+    if batch_size > 0:
+        end_index = start_index + batch_size
+        all_urls = all_urls[start_index:end_index]
+    
+    print(f"Found {len(all_urls)} items with images to process")
+    
+    # Process images
+    successful = 0
+    failed = 0
+    skipped = 0
+    failed_downloads = []
+    
+    for i, item in enumerate(all_urls):
+        url = item['url']
+        item_type = item['type']
+        data = item['data']
+        
+        # Skip if already in mapping
+        if url in image_mapping:
+            print(f"Image already processed: {url} -> {image_mapping[url]}")
+            successful += 1
+            skipped += 1
+            continue
+        
+        # Create filename
+        if item_type == 'set':
+            set_num = data['set_num']
+            name = data['name']
+            theme_id = data['theme_id']
+            theme_name = get_theme_name(theme_id)
+            filename = create_seo_friendly_filename(url, prefix=f"lego-{theme_name}-", name=name)
+        else:  # minifig
+            fig_num = data['fig_num']
+            name = data['name']
+            filename = create_seo_friendly_filename(url, prefix="lego-minifig-", name=name)
+        
+        output_path = os.path.join(IMAGES_DIR, filename)
+        
+        # Check if the file already exists
+        file_exists = os.path.exists(output_path)
+        
+        if dry_run:
+            if file_exists:
+                print(f"DRY RUN: Image already exists at {output_path}")
+            else:
+                print(f"DRY RUN: Would download {url} to {output_path}")
+            
+            # Create Cloudflare URL for mapping
+            if item_type == 'set':
+                object_key = f"catalog/set/{filename}"
+            else:  # minifig
+                object_key = f"catalog/minifig/{filename}"
+            
+            cloudflare_url = f"{CLOUDFLARE_PUBLIC_URL}/{object_key}"
+            
+            # Add to mapping
+            image_mapping[url] = cloudflare_url
+            print(f"DRY RUN: Added mapping: {url} -> {cloudflare_url}")
+            successful += 1
+            continue
+        
+        # If not dry run, proceed with download and upload
+        if file_exists:
+            print(f"Image already exists at {output_path}, skipping download")
+            success = True
+        else:
+            # Download and optimize image
+            success = download_and_optimize_image(url, output_path)
+        
+        if success:
+            # Upload to Cloudflare R2
+            if item_type == 'set':
+                object_key = f"catalog/set/{filename}"
+            else:  # minifig
+                object_key = f"catalog/minifig/{filename}"
+            
+            cloudflare_url = upload_to_cloudflare_r2(output_path, object_key)
+            
+            if cloudflare_url:
+                # Add to mapping
+                image_mapping[url] = cloudflare_url
+                print(f"Processed image: {url} -> {cloudflare_url}")
+                successful += 1
+            else:
+                print(f"Failed to upload image to Cloudflare R2: {url}")
+                failed += 1
+                failed_downloads.append({"url": url, "reason": "Failed to upload to Cloudflare R2"})
+        else:
+            print(f"Failed to download/process image: {url}")
+            failed += 1
+            failed_downloads.append({"url": url, "reason": "Failed to download/process"})
+    
+    # Save failed downloads
+    if failed_downloads:
+        failed_downloads_file = os.path.join(IMAGES_DIR, "failed_downloads.json")
+        
+        # Load existing failed downloads if the file exists
+        existing_failed = []
+        if os.path.exists(failed_downloads_file):
+            with open(failed_downloads_file, 'r') as f:
+                try:
+                    existing_failed = json.load(f)
+                except json.JSONDecodeError:
+                    existing_failed = []
+        
+        # Add new failed downloads
+        existing_failed.extend(failed_downloads)
+        
+        # Save updated failed downloads
+        with open(failed_downloads_file, 'w') as f:
+            json.dump(existing_failed, f, indent=2)
+        
+        print(f"Saved {len(failed_downloads)} failed downloads to {failed_downloads_file}")
+    
+    # Save image mapping
     with open(IMAGE_MAPPING_FILE, 'w') as f:
         json.dump(image_mapping, f, indent=2)
     
-    # Save failed downloads to a log file
-    if failed_downloads:
-        failed_log_file = os.path.join(IMAGES_DIR, "failed_downloads.json")
-        with open(failed_log_file, 'w') as f:
-            json.dump(failed_downloads, f, indent=2)
-        print(f"Saved {len(failed_downloads)} failed downloads to {failed_log_file}")
-    
     print(f"Processed {len(image_mapping)} images. Mapping saved to {IMAGE_MAPPING_FILE}")
+    if skipped > 0:
+        print(f"Skipped {skipped} already processed images")
     
-    return successful_downloads, len(failed_downloads)
+    return successful, failed
 
 def get_theme_name(theme_id):
     """Get the theme name from the theme ID."""
@@ -1012,11 +933,16 @@ def rebuild_image_mapping(force_upload=False):
     # Count of new mappings added
     new_mappings = 0
     uploaded_images = 0
+    skipped_images = 0
     
     # Process each image file
-    for image_file in image_files:
+    for i, image_file in enumerate(image_files):
+        # Show progress every 100 files
+        if i % 100 == 0:
+            print(f"Processing file {i+1}/{len(image_files)}...")
+        
         # Create the Cloudflare URL
-        if image_file.startswith('lego-minifig-'):
+        if 'minifig' in image_file.lower() or 'fig-' in image_file.lower():
             # This is a minifig image
             r2_object_key = f"catalog/minifig/{image_file}"
             item_type = 'minifig'
@@ -1031,6 +957,7 @@ def rebuild_image_mapping(force_upload=False):
         # Check if this URL is already in the reverse mapping
         if cloudflare_url in reverse_mapping and not force_upload:
             # Already mapped, skip
+            skipped_images += 1
             continue
         
         # Upload to Cloudflare R2 if force_upload is True
@@ -1044,17 +971,19 @@ def rebuild_image_mapping(force_upload=False):
         if item_type == 'set':
             # Try different patterns to extract the set number
             patterns = [
-                r'-([^-]+)\.jpg$',  # Standard pattern: lego-theme-name-number.jpg
-                r'lego-([^-]+)-([^-]+)-([^-]+)\.jpg$',  # Three-part pattern
-                r'lego-([^-]+)-([^-]+)\.jpg$',  # Two-part pattern
+                r'-(\d+[a-zA-Z0-9-]+)(?:-alt|-back|-side|-view\d+)?\.jpg$',  # Extract number at the end
+                r'lego-[^-]+-([^-]+)-[^-]+\.jpg$',  # Three-part pattern, middle part
+                r'lego-[^-]+-([^-]+)\.jpg$',  # Two-part pattern, last part
+                r'([0-9]+(?:-[0-9]+)?)(?:-alt|-back|-side|-view\d+)?\.jpg$',  # Just numbers with optional dash
+                r'([a-zA-Z0-9-]+)\.jpg$',  # Any alphanumeric before .jpg
             ]
             
             set_num = None
             for pattern in patterns:
                 match = re.search(pattern, image_file)
                 if match:
-                    # Use the last group as the set number
-                    set_num = match.group(match.lastindex)
+                    # Use the matched group as the set number
+                    set_num = match.group(1)
                     break
             
             if set_num:
@@ -1067,22 +996,37 @@ def rebuild_image_mapping(force_upload=False):
                 
                 # Add to mapping if not already present
                 for original_url in original_urls:
-                    if original_url not in image_mapping:
+                    if original_url not in image_mapping and cloudflare_url not in reverse_mapping.keys():
                         image_mapping[original_url] = cloudflare_url
+                        reverse_mapping[cloudflare_url] = original_url
                         new_mappings += 1
+                        if new_mappings % 10 == 0:
+                            print(f"Added {new_mappings} new mappings so far...")
                         break
+            else:
+                # If no pattern matched, use a generic mapping based on the filename
+                generic_set_id = image_file.replace('.jpg', '')
+                original_url = f"https://cdn.rebrickable.com/media/sets/{generic_set_id}.jpg"
+                if original_url not in image_mapping and cloudflare_url not in reverse_mapping.keys():
+                    image_mapping[original_url] = cloudflare_url
+                    reverse_mapping[cloudflare_url] = original_url
+                    new_mappings += 1
+                    if new_mappings % 10 == 0:
+                        print(f"Added {new_mappings} new mappings so far...")
         else:  # minifig
             # Try different patterns to extract the fig number
             patterns = [
-                r'-(fig-\d+)(?:-[a-z]+\d*)?\.jpg$',  # Standard pattern
+                r'-(fig-\d+)(?:-alt|-back|-side|-view\d+)?\.jpg$',  # Standard pattern
                 r'lego-minifig-([^-]+)-([^-]+)\.jpg$',  # Two-part pattern
+                r'fig-(\d+)(?:-alt|-back|-side|-view\d+)?\.jpg$',  # Just fig number
+                r'([a-zA-Z0-9-]+)\.jpg$',  # Any alphanumeric before .jpg
             ]
             
             fig_num = None
             for pattern in patterns:
                 match = re.search(pattern, image_file)
                 if match:
-                    # Use the first group as the fig number
+                    # Use the matched group as the fig number
                     fig_num = match.group(1)
                     break
             
@@ -1091,20 +1035,35 @@ def rebuild_image_mapping(force_upload=False):
                 original_urls = [
                     f"https://cdn.rebrickable.com/media/sets/{fig_num}.jpg",
                     f"https://cdn.rebrickable.com/media/sets/{fig_num}-1.jpg",
+                    f"https://cdn.rebrickable.com/media/sets/fig-{fig_num.replace('fig-', '')}.jpg",
                 ]
                 
                 # Add to mapping if not already present
                 for original_url in original_urls:
-                    if original_url not in image_mapping:
+                    if original_url not in image_mapping and cloudflare_url not in reverse_mapping.keys():
                         image_mapping[original_url] = cloudflare_url
+                        reverse_mapping[cloudflare_url] = original_url
                         new_mappings += 1
+                        if new_mappings % 10 == 0:
+                            print(f"Added {new_mappings} new mappings so far...")
                         break
+            else:
+                # If no pattern matched, use a generic mapping based on the filename
+                generic_fig_id = image_file.replace('.jpg', '')
+                original_url = f"https://cdn.rebrickable.com/media/sets/{generic_fig_id}.jpg"
+                if original_url not in image_mapping and cloudflare_url not in reverse_mapping.keys():
+                    image_mapping[original_url] = cloudflare_url
+                    reverse_mapping[cloudflare_url] = original_url
+                    new_mappings += 1
+                    if new_mappings % 10 == 0:
+                        print(f"Added {new_mappings} new mappings so far...")
     
     # Save updated image mapping
     with open(IMAGE_MAPPING_FILE, 'w') as f:
         json.dump(image_mapping, f, indent=2)
     
     print(f"Added {new_mappings} new mappings to image_mapping.json")
+    print(f"Skipped {skipped_images} already mapped images")
     if force_upload:
         print(f"Uploaded {uploaded_images} images to Cloudflare R2")
     print(f"Total mappings: {len(image_mapping)}")
@@ -1214,9 +1173,363 @@ def test_proxy():
         print("Use --force-own-ip if you want to allow direct connections.")
         return False
 
+def validate_image_urls(only_cloudflare=True):
+    """
+    Validate image URLs in the image mapping to check if they are accessible.
+    
+    Args:
+        only_cloudflare (bool): If True, only validate URLs from Cloudflare (images.bricksdeal.com)
+    
+    Returns:
+        Tuple of (valid_count, invalid_count, validation_results)
+    """
+    print("Validating image URLs...")
+    
+    # Load image mapping
+    if not os.path.exists(IMAGE_MAPPING_FILE):
+        print(f"Image mapping file not found: {IMAGE_MAPPING_FILE}")
+        return 0, 0, []
+    
+    with open(IMAGE_MAPPING_FILE, 'r') as f:
+        image_mapping = json.load(f)
+    
+    print(f"Found {len(image_mapping)} image mappings to validate")
+    
+    # Set up headers
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    }
+    
+    # Validate URLs
+    valid_count = 0
+    invalid_count = 0
+    validation_results = []
+    
+    for original_url, cloudflare_url in image_mapping.items():
+        # Skip if not a Cloudflare URL and only_cloudflare is True
+        if only_cloudflare and "images.bricksdeal.com" not in cloudflare_url:
+            continue
+        
+        print(f"Validating: {cloudflare_url}")
+        
+        try:
+            # Make a HEAD request to check if the URL is accessible
+            response = requests.head(cloudflare_url, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                print(f"✅ Valid URL: {cloudflare_url}")
+                valid_count += 1
+                validation_results.append({
+                    "original_url": original_url,
+                    "cloudflare_url": cloudflare_url,
+                    "status": "valid",
+                    "status_code": response.status_code
+                })
+            else:
+                print(f"❌ Invalid URL: {cloudflare_url} (Status code: {response.status_code})")
+                invalid_count += 1
+                validation_results.append({
+                    "original_url": original_url,
+                    "cloudflare_url": cloudflare_url,
+                    "status": "invalid",
+                    "status_code": response.status_code
+                })
+        except Exception as e:
+            print(f"❌ Error validating URL: {cloudflare_url} ({str(e)})")
+            invalid_count += 1
+            validation_results.append({
+                "original_url": original_url,
+                "cloudflare_url": cloudflare_url,
+                "status": "error",
+                "error": str(e)
+            })
+    
+    # Save validation results
+    validation_file = os.path.join(IMAGES_DIR, "validation_results.json")
+    with open(validation_file, 'w') as f:
+        json.dump(validation_results, f, indent=2)
+    
+    print(f"Validation complete: {valid_count} valid URLs, {invalid_count} invalid URLs")
+    print(f"Results saved to {validation_file}")
+    
+    return valid_count, invalid_count, validation_results
+
+def list_r2_objects():
+    """
+    List all objects in the Cloudflare R2 bucket and verify they're mapped in the CSV files.
+    Returns a list of all object keys in the bucket.
+    """
+    print("Listing objects in Cloudflare R2 bucket...")
+    
+    # Check if environment variables are set
+    endpoint = os.environ.get('CLOUDFLARE_R2_ENDPOINT')
+    access_key = os.environ.get('CLOUDFLARE_R2_ACCESS_KEY_ID')
+    secret_key = os.environ.get('CLOUDFLARE_R2_SECRET_ACCESS_KEY')
+    
+    if not all([endpoint, access_key, secret_key]):
+        print("Error: Cloudflare R2 environment variables are not set correctly.")
+        print("Please ensure the following environment variables are set:")
+        print("  - CLOUDFLARE_R2_ENDPOINT")
+        print("  - CLOUDFLARE_R2_ACCESS_KEY_ID")
+        print("  - CLOUDFLARE_R2_SECRET_ACCESS_KEY")
+        return []
+    
+    try:
+        # Initialize S3 client for Cloudflare R2
+        s3 = boto3.client(
+            's3',
+            endpoint_url=endpoint,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key
+        )
+        
+        # List all objects in the bucket
+        all_objects = []
+        continuation_token = None
+        
+        while True:
+            try:
+                if continuation_token:
+                    response = s3.list_objects_v2(
+                        Bucket=CLOUDFLARE_R2_BUCKET_NAME,
+                        ContinuationToken=continuation_token
+                    )
+                else:
+                    response = s3.list_objects_v2(
+                        Bucket=CLOUDFLARE_R2_BUCKET_NAME
+                    )
+                
+                if 'Contents' in response:
+                    all_objects.extend(response['Contents'])
+                
+                if not response.get('IsTruncated'):
+                    break
+                
+                continuation_token = response.get('NextContinuationToken')
+            except Exception as e:
+                print(f"Error listing objects: {str(e)}")
+                break
+        
+        print(f"Found {len(all_objects)} objects in R2 bucket")
+        return all_objects
+    except Exception as e:
+        print(f"Error connecting to Cloudflare R2: {str(e)}")
+        return []
+
+def verify_r2_mappings(cleanup_local=False):
+    """
+    Verify that all objects in the R2 bucket are mapped in the CSV files.
+    
+    Args:
+        cleanup_local (bool): If True, remove local files that have been successfully uploaded to R2
+        
+    Returns:
+        Tuple of (mapped_count, unmapped_count, removed_count)
+    """
+    print("Verifying R2 bucket mappings...")
+    
+    # Get all objects in the R2 bucket
+    r2_objects = list_r2_objects()
+    
+    if not r2_objects:
+        print("No objects found in R2 bucket or error connecting to R2.")
+        return 0, 0, 0
+    
+    # Create a set of all R2 object keys
+    r2_object_keys = {obj['Key'] for obj in r2_objects}
+    
+    # Load image mapping
+    if not os.path.exists(IMAGE_MAPPING_FILE):
+        print(f"Image mapping file not found: {IMAGE_MAPPING_FILE}")
+        return 0, len(r2_object_keys), 0
+    
+    try:
+        with open(IMAGE_MAPPING_FILE, 'r') as f:
+            image_mapping = json.load(f)
+    except Exception as e:
+        print(f"Error loading image mapping file: {str(e)}")
+        return 0, len(r2_object_keys), 0
+    
+    # Create a set of all Cloudflare URLs in the mapping
+    cloudflare_urls = set(image_mapping.values())
+    
+    # Convert Cloudflare URLs to object keys
+    mapped_object_keys = set()
+    for url in cloudflare_urls:
+        if url and isinstance(url, str) and url.startswith(CLOUDFLARE_PUBLIC_URL):
+            object_key = url.replace(CLOUDFLARE_PUBLIC_URL + "/", "")
+            mapped_object_keys.add(object_key)
+    
+    # Find unmapped objects
+    unmapped_object_keys = r2_object_keys - mapped_object_keys
+    
+    print(f"Total R2 objects: {len(r2_object_keys)}")
+    print(f"Mapped objects: {len(mapped_object_keys)}")
+    print(f"Unmapped objects: {len(unmapped_object_keys)}")
+    
+    # Check if the mapped objects are in the CSV files
+    sets_csv = os.path.join(EXTRACTED_DIR, "sets.csv")
+    minifigs_csv = os.path.join(EXTRACTED_DIR, "minifigs.csv")
+    
+    csv_urls = set()
+    
+    # Check sets.csv
+    if os.path.exists(sets_csv):
+        try:
+            with open(sets_csv, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if 'img_url' in row and row['img_url'] and isinstance(row['img_url'], str) and row['img_url'].startswith(CLOUDFLARE_PUBLIC_URL):
+                        csv_urls.add(row['img_url'])
+        except Exception as e:
+            print(f"Error reading sets.csv: {str(e)}")
+    
+    # Check minifigs.csv
+    if os.path.exists(minifigs_csv):
+        try:
+            with open(minifigs_csv, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if 'img_url' in row and row['img_url'] and isinstance(row['img_url'], str) and row['img_url'].startswith(CLOUDFLARE_PUBLIC_URL):
+                        csv_urls.add(row['img_url'])
+        except Exception as e:
+            print(f"Error reading minifigs.csv: {str(e)}")
+    
+    # Convert CSV URLs to object keys
+    csv_object_keys = set()
+    for url in csv_urls:
+        if url and isinstance(url, str) and url.startswith(CLOUDFLARE_PUBLIC_URL):
+            object_key = url.replace(CLOUDFLARE_PUBLIC_URL + "/", "")
+            csv_object_keys.add(object_key)
+    
+    # Find objects that are mapped but not in the CSV files
+    not_in_csv = mapped_object_keys - csv_object_keys
+    
+    print(f"URLs in CSV files: {len(csv_urls)}")
+    print(f"Objects in CSV files: {len(csv_object_keys)}")
+    print(f"Mapped objects not in CSV files: {len(not_in_csv)}")
+    
+    # If requested, clean up local files that have been uploaded to R2
+    removed_count = 0
+    if cleanup_local:
+        print("Cleaning up local files that have been uploaded to R2...")
+        
+        # Get all local image files
+        try:
+            local_files = [f for f in os.listdir(IMAGES_DIR) if f.endswith('.jpg') and os.path.isfile(os.path.join(IMAGES_DIR, f))]
+            print(f"Found {len(local_files)} local image files")
+            
+            # For each local file, check if it's been uploaded to R2 and is in the CSV files
+            for local_file in local_files:
+                # Determine the R2 object key for this file
+                if 'minifig' in local_file.lower() or 'fig-' in local_file.lower():
+                    object_key = f"catalog/minifig/{local_file}"
+                else:
+                    object_key = f"catalog/set/{local_file}"
+                
+                # If the object is in R2 and in the CSV files, we can safely remove the local file
+                if object_key in r2_object_keys and object_key in csv_object_keys:
+                    try:
+                        os.remove(os.path.join(IMAGES_DIR, local_file))
+                        removed_count += 1
+                        if removed_count % 100 == 0:
+                            print(f"Removed {removed_count} local files so far...")
+                    except Exception as e:
+                        print(f"Error removing file {local_file}: {str(e)}")
+            
+            print(f"Removed {removed_count} local files that were successfully uploaded to R2 and mapped in CSV files")
+        except Exception as e:
+            print(f"Error listing local files: {str(e)}")
+    
+    return len(mapped_object_keys), len(unmapped_object_keys), removed_count
+
+def cleanup_local_files():
+    """
+    Clean up local files that have been uploaded to Cloudflare R2 based on the image mapping.
+    This function doesn't require direct access to the R2 bucket, it just uses the image mapping.
+    
+    Returns:
+        int: Number of files removed
+    """
+    print("Cleaning up local files based on image mapping...")
+    
+    # Load image mapping
+    if not os.path.exists(IMAGE_MAPPING_FILE):
+        print(f"Image mapping file not found: {IMAGE_MAPPING_FILE}")
+        return 0
+    
+    try:
+        with open(IMAGE_MAPPING_FILE, 'r') as f:
+            image_mapping = json.load(f)
+    except Exception as e:
+        print(f"Error loading image mapping file: {str(e)}")
+        return 0
+    
+    # Create a set of all Cloudflare URLs in the mapping
+    cloudflare_urls = set(image_mapping.values())
+    
+    # Check if the mapped objects are in the CSV files
+    sets_csv = os.path.join(EXTRACTED_DIR, "sets.csv")
+    minifigs_csv = os.path.join(EXTRACTED_DIR, "minifigs.csv")
+    
+    csv_urls = set()
+    
+    # Check sets.csv
+    if os.path.exists(sets_csv):
+        try:
+            with open(sets_csv, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if 'img_url' in row and row['img_url'] and isinstance(row['img_url'], str) and row['img_url'].startswith(CLOUDFLARE_PUBLIC_URL):
+                        csv_urls.add(row['img_url'])
+        except Exception as e:
+            print(f"Error reading sets.csv: {str(e)}")
+    
+    # Check minifigs.csv
+    if os.path.exists(minifigs_csv):
+        try:
+            with open(minifigs_csv, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if 'img_url' in row and row['img_url'] and isinstance(row['img_url'], str) and row['img_url'].startswith(CLOUDFLARE_PUBLIC_URL):
+                        csv_urls.add(row['img_url'])
+        except Exception as e:
+            print(f"Error reading minifigs.csv: {str(e)}")
+    
+    # Get all local image files
+    try:
+        local_files = [f for f in os.listdir(IMAGES_DIR) if f.endswith('.jpg') and os.path.isfile(os.path.join(IMAGES_DIR, f))]
+        print(f"Found {len(local_files)} local image files")
+        
+        # For each local file, check if it's mapped and in the CSV files
+        removed_count = 0
+        for local_file in local_files:
+            # Determine the Cloudflare URL for this file
+            if 'minifig' in local_file.lower() or 'fig-' in local_file.lower():
+                cloudflare_url = f"{CLOUDFLARE_PUBLIC_URL}/catalog/minifig/{local_file}"
+            else:
+                cloudflare_url = f"{CLOUDFLARE_PUBLIC_URL}/catalog/set/{local_file}"
+            
+            # If the URL is in the mapping values and in the CSV files, we can safely remove the local file
+            if cloudflare_url in cloudflare_urls and cloudflare_url in csv_urls:
+                try:
+                    os.remove(os.path.join(IMAGES_DIR, local_file))
+                    removed_count += 1
+                    if removed_count % 100 == 0:
+                        print(f"Removed {removed_count} local files so far...")
+                except Exception as e:
+                    print(f"Error removing file {local_file}: {str(e)}")
+        
+        print(f"Removed {removed_count} local files that were successfully uploaded to R2 and mapped in CSV files")
+        return removed_count
+    except Exception as e:
+        print(f"Error listing local files: {str(e)}")
+        return 0
+
 def main(args=None):
+    """Main entry point for the script."""
     if args is None:
-        parser = argparse.ArgumentParser(description="Extract LEGO catalog data and process images")
+        parser = argparse.ArgumentParser(description="Extract catalog data from Rebrickable")
         parser.add_argument("--extract-only", action="store_true", help="Only extract .gz files without processing images")
         parser.add_argument("--process-images", action="store_true", help="Process images without extracting .gz files")
         parser.add_argument("--update-csv", action="store_true", help="Update CSV files with new image URLs")
@@ -1224,13 +1537,18 @@ def main(args=None):
         parser.add_argument("--minifigs-only", action="store_true", help="Process only minifigure images")
         parser.add_argument("--test", action="store_true", help="Run test function for multiple images")
         parser.add_argument("--use-proxies", action="store_true", help="Use proxy rotation for image downloads")
-        parser.add_argument("--proxies-file", default=PROXIES_FILE, help="File containing proxy URLs")
+        parser.add_argument("--proxies-file", type=str, default=PROXIES_FILE, help="File containing proxy URLs")
         parser.add_argument("--start-index", type=int, default=0, help="Start index for batch processing")
         parser.add_argument("--batch-size", type=int, default=0, help="Batch size for processing (0 means process all)")
         parser.add_argument("--rebuild-mapping", action="store_true", help="Rebuild image mapping from catalog-images directory")
         parser.add_argument("--force-upload", action="store_true", help="Force upload all images to Cloudflare R2 when rebuilding mapping")
         parser.add_argument("--test-proxy", action="store_true", help="Test proxy configuration")
         parser.add_argument("--force-own-ip", action="store_true", help="Allow using your own IP address if no proxy is available")
+        parser.add_argument("--dry-run", action="store_true", help="Skip downloading images but perform all other operations")
+        parser.add_argument("--validate-urls", action="store_true", help="Validate image URLs in the mapping file")
+        parser.add_argument("--validate-all", action="store_true", help="Validate all URLs, not just Cloudflare ones")
+        parser.add_argument("--verify-r2", action="store_true", help="Verify that all objects in the R2 bucket are mapped in the CSV files")
+        parser.add_argument("--cleanup-local", action="store_true", help="Remove local files that have been successfully uploaded to R2")
         
         args = parser.parse_args()
     
@@ -1248,25 +1566,41 @@ def main(args=None):
         test_multiple_images()
         return
     
+    # Validate image URLs if requested
+    if args.validate_urls:
+        validate_image_urls(only_cloudflare=not args.validate_all)
+        return
+    
     # Rebuild image mapping if requested
     if args.rebuild_mapping:
         rebuild_image_mapping(force_upload=args.force_upload)
+        return
+    
+    # Verify R2 mappings if requested
+    if args.verify_r2:
+        verify_r2_mappings(cleanup_local=args.cleanup_local)
+        return
+    
+    # Clean up local files if requested
+    if args.cleanup_local and not args.verify_r2:
+        cleanup_local_files()
         return
     
     # Ensure directories exist
     ensure_directories()
     
     # Extract .gz files if requested or if no specific action is requested
-    if args.extract_only or (not args.process_images and not args.update_csv and not args.test and not args.rebuild_mapping):
+    if args.extract_only or (not args.process_images and not args.update_csv and not args.test and not args.rebuild_mapping and not args.validate_urls and not args.verify_r2 and not args.cleanup_local):
         extract_gz_files()
     
     # Process images if requested or if no specific action is requested
-    if args.process_images or (not args.extract_only and not args.update_csv and not args.test and not args.rebuild_mapping):
+    if args.process_images or (not args.extract_only and not args.update_csv and not args.test and not args.rebuild_mapping and not args.validate_urls and not args.verify_r2 and not args.cleanup_local):
         successful, failed = process_image_urls(
             limit=args.limit, 
             minifigs_only=args.minifigs_only,
             start_index=args.start_index,
-            batch_size=args.batch_size
+            batch_size=args.batch_size,
+            dry_run=args.dry_run
         )
         print(f"Summary: {successful} images processed successfully, {failed} images failed")
         
@@ -1275,7 +1609,7 @@ def main(args=None):
             print("Automatically updating CSV files with new image URLs...")
             update_csv_with_new_urls()
     
-    # Update CSV files if explicitly requested
+    # Update CSV files if requested
     if args.update_csv:
         update_csv_with_new_urls()
     
