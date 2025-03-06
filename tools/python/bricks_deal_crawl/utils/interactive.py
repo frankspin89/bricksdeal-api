@@ -8,6 +8,9 @@ import sys
 import time
 from .help import Colors
 
+# Constants
+BRICKS_DEAL_CMD = "tools/python/venv/bin/bricks-deal"
+
 def clear_screen():
     """Clear the terminal screen."""
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -67,8 +70,8 @@ def run_command(command, args=None):
     # Convert args to a list of strings
     args = [str(arg) for arg in args]
     
-    # Build the command string
-    cmd = f"bricks-deal {command} {' '.join(args)}"
+    # Build the command string with the full path to the bricks-deal command
+    cmd = f"{BRICKS_DEAL_CMD} {command} {' '.join(args)}"
     
     # Print the command
     print(f"\n{Colors.CYAN}Running: {cmd}{Colors.ENDC}\n")

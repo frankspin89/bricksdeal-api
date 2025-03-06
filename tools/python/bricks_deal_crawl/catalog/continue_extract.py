@@ -59,6 +59,13 @@ def continue_extraction(item_type, batch_size, use_proxies=True, proxies_file=No
     print(f"Continuing {item_type} extraction from index {start_index}")
     print(f"Batch size: {batch_size}")
     
+    # Set default value for proxies_file if None
+    if proxies_file is None:
+        proxies_file = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "input", "proxies.csv"
+        )
+    
     # Create args object to pass to extract_main
     class Args:
         pass
@@ -74,6 +81,17 @@ def continue_extraction(item_type, batch_size, use_proxies=True, proxies_file=No
     args.proxies_file = proxies_file
     args.start_index = start_index
     args.batch_size = batch_size
+    args.force_own_ip = False
+    args.rebuild_mapping = False
+    args.force_upload = False
+    args.test_proxy = False
+    args.dry_run = False
+    args.validate_urls = False
+    args.validate_all = False
+    args.verify_r2 = False
+    args.cleanup_local = False
+    args.continue_processing = False
+    args.show_progress = False
     
     # Run the extraction
     extract_main(args)
